@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 bevy = {version = "*", features = ["dynamic_linking"]}
 rand = "0.8.5"
+bevy-inspector-egui = {version = "*"}
 
 # Optimizations in debug mode
 [profile.dev]

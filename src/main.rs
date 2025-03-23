@@ -10,6 +10,8 @@ mod menu;
 mod game_states;
 
 use bevy::prelude::*;
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
+
 
 fn main() {
     App::new()
@@ -20,6 +22,7 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(WorldInspectorPlugin::new())
         .add_plugins(menu::MenuPlugin)
         .add_plugins(animation::AnimationTestPlugin)
         .run();

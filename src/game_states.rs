@@ -6,6 +6,8 @@ pub enum AppState {
     #[default]
     Menu,
     InGame,
+    // Inventory,
+    // Death
 }
 
 pub struct GameStatePlugin;
