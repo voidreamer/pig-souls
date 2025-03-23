@@ -4,3 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bevy = {version = "*", features = ["dynamic_linking"]}
+rand = "0.8.5"
+
+# Optimizations in debug mode
+[profile.dev]
+opt-level = 1
+
+# High optimizations for depencencies
+[profile.dev.package."*"]
+opt-level = 3
+
+
