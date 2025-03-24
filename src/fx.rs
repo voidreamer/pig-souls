@@ -505,6 +505,7 @@ pub struct SmokeExplosionPlugin;
 impl Plugin for SmokeExplosionPlugin {
     fn build(&self, app: &mut App) {
         app
+            .add_plugins(HanabiPlugin)
             .add_systems(OnEnter(AppState::InGame), setup)
             .add_systems(Update, (update_explosion_timer, handle_button).run_if(in_state(AppState::InGame)));
     }
