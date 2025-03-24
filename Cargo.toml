@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 bevy = {version = "*", features = ["dynamic_linking"]}
+bevy_hanabi = {git = "https://github.com/djeedai/bevy_hanabi", branch="main", default-features = true, features = [ "3d", "serde" ] }
+
 rand = "0.8.5"
 bevy-inspector-egui = {version = "*"}
 

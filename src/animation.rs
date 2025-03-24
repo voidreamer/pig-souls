@@ -9,6 +9,7 @@ use bevy::{
 use bevy::animation::AnimationTarget;
 use bevy::color::palettes::css::LIGHT_GRAY;
 use bevy::utils::HashSet;
+use bevy_hanabi::EffectAsset;
 use rand::{thread_rng, Rng};
 use crate::game_states::AppState;
 
@@ -133,7 +134,10 @@ fn observe_on_step(
     particle: Res<ParticleAssets>,
     mut commands: Commands,
     transforms: Query<&GlobalTransform>,
+    mut effects: ResMut<Assets<EffectAsset>>,
+    asset_server: Res<AssetServer>,
 ) {
+    crate::fx::spawn_explosion(&mut commands, &asset_server, &mut effects);
     let translation = transforms.get(trigger.entity()).unwrap().translation();
     let mut rng = thread_rng();
     // Spawn a bunch of particles.
