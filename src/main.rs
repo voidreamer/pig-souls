@@ -5,6 +5,7 @@ mod fx;
 
 use bevy::prelude::*;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy_skein::SkeinPlugin;
 
 
 fn main() {
@@ -17,8 +18,9 @@ fn main() {
             ..default()
         }))
         .add_plugins(WorldInspectorPlugin::new())
+        .add_plugins(SkeinPlugin::default())
         .add_plugins(menu::MenuPlugin)
         .add_plugins(animation::AnimationTestPlugin)
-        .add_plugins(fx::SmokeExplosionPlugin)
+        .add_plugins(fx::FXPlugin)
         .run();
 }

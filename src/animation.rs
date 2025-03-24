@@ -23,6 +23,8 @@ impl Plugin for AnimationTestPlugin {
             .init_resource::<ParticleAssets>()
             .init_resource::<FoxFeetTargets>()
             .init_resource::<FoxAppState>()
+            .init_resource::<Animations>()
+            .add_observer(observe_on_step)
             .insert_resource(AmbientLight {
                 color: Color::WHITE,
                 brightness: 2000.,
@@ -137,8 +139,8 @@ fn observe_on_step(
     mut effects: ResMut<Assets<EffectAsset>>,
     asset_server: Res<AssetServer>,
 ) {
-    crate::fx::spawn_explosion(&mut commands, &asset_server, &mut effects);
     let translation = transforms.get(trigger.entity()).unwrap().translation();
+    // TODO spawn here a hanabi fx, currently complaining.
     let mut rng = thread_rng();
     // Spawn a bunch of particles.
     for _ in 0..14 {
@@ -163,9 +165,6 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
 ) {
-    commands.init_resource::<Animations>();
-    commands.init_resource::<FoxAppState>();
-    commands.add_observer(observe_on_step);
 
     // Build the animation graph
     let (graph, node_indices) = AnimationGraph::from_clips([
