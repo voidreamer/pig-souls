@@ -9,9 +9,10 @@ use bevy::{
 use bevy::animation::AnimationTarget;
 use bevy::color::palettes::css::LIGHT_GRAY;
 use bevy::utils::HashSet;
-use bevy_hanabi::EffectAsset;
+use bevy_hanabi::{EffectAsset, EffectMaterial, ParticleEffect};
 use rand::{thread_rng, Rng};
 use crate::game_states::AppState;
+use crate::fx::*;
 
 const FOX_PATH: &str = "models/animated/Fox.glb";
 
@@ -31,10 +32,14 @@ impl Plugin for AnimationTestPlugin {
             })
                 .add_systems(OnEnter(AppState::InGame), (setup, setup_ui))
                 //.add_systems(Update, setup_scene_once_loaded.run_if(in_state(AppState::InGame)))
-                .add_systems(Update, (handle_button_toggles, update_ui).run_if(in_state(AppState::InGame)))
-                .add_systems(Update, setup_animation_graph_once_loaded.run_if(in_state(AppState::InGame)))
-                .add_systems(Update, simulate_particles.run_if(in_state(AppState::InGame)))
-                .add_systems(Update, keyboard_animation_control.run_if(in_state(AppState::InGame)));
+                .add_systems(Update, (
+                    handle_button_toggles,
+                    update_ui,
+                    setup_animation_graph_once_loaded,
+                    simulate_particles,
+                    handle_one_shot_effects,
+                    keyboard_animation_control
+                ).run_if(in_state(AppState::InGame)));
     }
 }
 // IDs of the mask groups we define for the running fox model.
@@ -133,29 +138,21 @@ struct OnStep;
 
 fn observe_on_step(
     trigger: Trigger<OnStep>,
-    particle: Res<ParticleAssets>,
+    effects: Res<EffectHandles>,
     mut commands: Commands,
     transforms: Query<&GlobalTransform>,
-    mut effects: ResMut<Assets<EffectAsset>>,
-    asset_server: Res<AssetServer>,
 ) {
     let translation = transforms.get(trigger.entity()).unwrap().translation();
-    // TODO spawn here a hanabi fx, currently complaining.
-    let mut rng = thread_rng();
-    // Spawn a bunch of particles.
-    for _ in 0..14 {
-        let horizontal= rng.gen_range(0.0..4.0);
-        let vertical = rng.gen_range(0.0..4.0);
-        let size = rng.gen_range(0.2..1.0);
-        commands.queue(spawn_particle(
-            particle.mesh.clone(),
-            particle.material.clone(),
+
+    commands.spawn((
+        Name::new("step_fire"),
+        OneShotParticleEffect::new(
+            effects.fire_step.clone(),
             translation.reject_from_normalized(Vec3::Y),
-            rng.gen_range(0.2..0.6),
-            size,
-            Vec3::new(horizontal, vertical, horizontal) * 10.0,
-        ));
-    }
+            1.5
+        ),
+    ));
+
 }
 
 fn setup(
