@@ -186,13 +186,6 @@ fn setup(
             .build(),
     ));
 
-    // Fox
-    commands.spawn((
-       Transform::from_scale(Vec3::splat(0.01)),
-       SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(FOX_PATH)))
-    ));
-
-
 }
 
 fn get_clip<'a>(

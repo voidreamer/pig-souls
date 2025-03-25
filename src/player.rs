@@ -17,27 +17,69 @@ use bevy::prelude::*;
 use character_controller::*;
 use crate::game_states::AppState;
 
-pub struct Player;
+pub struct PlayerPlugin;
 
-impl Plugin for Player {
+impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins(CharacterControllerPlugin)
-            .add_systems(OnEnter(AppState::InGame), (setup));
+            .add_systems(OnEnter(AppState::InGame), setup);
     }
 }
+
+const CHARACTER_PATH: &str = "models/animated/Fox.glb";
+
+#[derive(Component)]
+pub struct Player {
+    pub is_moving: bool,
+    pub is_attacking: bool,    // Flag for attack animation state
+
+    // Added for UI
+    pub health: f32,
+    pub max_health: f32,
+    pub stamina: f32,
+    pub max_stamina: f32,
+    pub stamina_regen_rate: f32,
+    pub stamina_use_rate: f32,
+    pub exhausted: bool,       // Flag for when stamina is depleted
+    pub exhaustion_timer: f32, // Time before stamina starts regenerating
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        Self {
+            is_moving: false,
+            is_attacking: false,
+
+            // Stats
+            health: 100.0,
+            max_health: 100.0,
+            stamina: 100.0,
+            max_stamina: 100.0,
+            stamina_regen_rate: 30.0, // Stamina gained per second when not using
+            stamina_use_rate: 15.0,   // Stamina used per second when running
+            exhausted: false,
+            exhaustion_timer: 0.0,
+        }
+    }
+}
+
+#[derive(Resource)]
+pub struct PlayerGltfHandle(pub Handle<Gltf>);
+
 
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    assets: Res<AssetServer>,
+    asset_server: Res<AssetServer>,
 ) {
     // Player
     commands.spawn((
-        Mesh3d(meshes.add(Capsule3d::new(0.4, 1.0))),
+        SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(CHARACTER_PATH))),
         MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
         Transform::from_xyz(0.0, 1.5, 0.0),
+        Player::default(),
         CharacterControllerBundle::new(
             Collider::capsule(0.4, 1.0)).with_movement(
                 30.0,
@@ -61,15 +103,9 @@ fn setup(
 
     // Environment (see the `collider_constructors` example for creating colliders from scenes)
     commands.spawn((
-        SceneRoot(assets.load("character_controller_demo.glb#Scene0")),
+        SceneRoot(asset_server.load("character_controller_demo.glb#Scene0")),
         Transform::from_rotation(Quat::from_rotation_y(-core::f32::consts::PI * 0.5)),
         ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
         RigidBody::Static,
-    ));
-
-    // Camera
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(-7.0, 9.5, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }
