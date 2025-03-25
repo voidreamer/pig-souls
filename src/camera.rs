@@ -110,6 +110,7 @@ pub fn third_person_camera(
     mut mouse_motion: EventReader<MouseMotion>,
     mut mouse_wheel: EventReader<MouseWheel>,
     keyboard: Res<ButtonInput<KeyCode>>,
+    gamepads: Query<&Gamepad>,
     player_query: Query<&Transform, (With<Player>, Without<ThirdPersonCamera>)>,
     mut camera_query: Query<(&mut Transform, &mut ThirdPersonCamera)>,
     time: Res<Time>,
@@ -151,6 +152,39 @@ pub fn third_person_camera(
             }
         }
 
+        // GAMEPAD CAMERA CONTROL
+        // Check for any connected gamepads
+        for gamepad in gamepads.iter() {
+            // Use right stick for camera rotation
+            if let (Some(right_stick_x), Some(right_stick_y)) = (
+                gamepad.get(GamepadAxis::RightStickX),
+                gamepad.get(GamepadAxis::RightStickY),
+            ) {
+                // Only apply rotation if stick is being moved (add deadzone)
+                if right_stick_x.abs() > 0.1 || right_stick_y.abs() > 0.1 {
+                    // Convert gamepad input to camera rotation
+                    // Adjust these multipliers to get the right sensitivity
+                    let gamepad_sensitivity = 0.05; // Adjust as needed
+
+                    let inverted_stick_y = -right_stick_y;
+
+                    // Apply inversion if configured
+                    let dx = if camera_params.invert_x { -right_stick_x } else { right_stick_x };
+                    let dy = if camera_params.invert_y { -inverted_stick_y } else { inverted_stick_y };
+
+                    // Apply rotation with time-based smoothing
+                    camera_params.yaw -= dx * gamepad_sensitivity * time.delta_secs() * 60.0;
+                    camera_params.pitch += dy * gamepad_sensitivity * time.delta_secs() * 60.0;
+
+                    // Clamp pitch to prevent flipping
+                    camera_params.pitch = camera_params.pitch.clamp(0.5, 1.4);
+                }
+            }
+
+            // Clamp distance to reasonable values
+            camera_params.distance = camera_params.distance.clamp(1.0, 5.0);
+        }
+
         // Get player position as the center point
         let player_pos = player_transform.translation;
 
@@ -186,7 +220,6 @@ pub fn third_person_camera(
         camera_transform.look_at(focus_pos, Vec3::Y);
     }
 }
-
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {

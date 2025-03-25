@@ -194,12 +194,12 @@ mod controller_input {
         }
 
         // Handle jump
-        if keyboard_input.just_pressed(KeyCode::ControlLeft) && !player.is_rolling {
+        if keyboard_input.just_pressed(KeyCode::Space) && !player.is_rolling {
             movement_event_writer.send(MovementAction::Jump);
         }
 
-        // Handle roll with dedicated key (E)
-        if keyboard_input.just_pressed(KeyCode::Space) && player.can_roll && !player.is_rolling && !player.exhausted {
+        // Handle roll
+        if keyboard_input.just_pressed(KeyCode::ControlLeft) && player.can_roll && !player.is_rolling && !player.exhausted {
             // Use the current movement direction for rolling, or forward if not moving
             let roll_direction = if direction != Vector2::ZERO {
                 direction
