@@ -6,6 +6,7 @@ mod fx;
 mod player;
 mod character_controller;
 mod physics;
+mod world;
 
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, WindowResolution};
@@ -20,11 +21,13 @@ fn main() {
                     //mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
                     present_mode: bevy::window::PresentMode::AutoVsync,
                     resolution: WindowResolution::new(1920., 1080.).with_scale_factor_override(1.0),
+                    /*
                     cursor_options: CursorOptions {
                         grab_mode: CursorGrabMode::Confined,
                         visible: false,
                         ..default()
                     },
+                     */
                     ..default()
                 }),
                 ..default()
@@ -38,5 +41,6 @@ fn main() {
         .add_plugins(physics::PhysicsPlugin)
         .add_plugins(player::PlayerPlugin)
         .add_plugins(camera::CameraPlugin)
+        .add_plugins(world::WorldPlugin)
         .run();
 }
