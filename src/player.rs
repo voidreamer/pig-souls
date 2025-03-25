@@ -16,7 +16,6 @@ use avian3d::{math::*, prelude::*};
 use bevy::prelude::*;
 use character_controller::*;
 use crate::game_states::AppState;
-use std::f32::consts::PI;
 
 pub struct PlayerPlugin;
 
@@ -80,8 +79,6 @@ pub struct Player {
     // Stamina costs
     pub roll_stamina_cost: f32,
     pub block_stamina_cost_per_sec: f32,
-
-    pub slope: SlopeHandling
 }
 
 impl Default for Player {
@@ -136,29 +133,6 @@ impl Default for Player {
             roll_stamina_cost: 20.0,       // Cost per roll
             block_stamina_cost_per_sec: 5.0, // Cost per second while blocking
 
-            slope: SlopeHandling::default()
-        }
-    }
-}
-
-pub struct SlopeHandling {
-    pub uphill_slowdown_factor: f32,     // How much to slow down when going uphill (0.0-1.0)
-    pub downhill_speed_factor: f32,      // How much to speed up when going downhill (1.0+)
-    pub max_traversable_slope: f32,      // Maximum angle in radians player can climb
-    pub slope_snap_force: f32,           // Force to keep player stuck to slopes
-    pub current_slope_angle: f32,        // Current slope angle in radians
-    pub on_steep_slope: bool,            // Whether on a slope steeper than max_traversable
-}
-
-impl Default for SlopeHandling {
-    fn default() -> Self {
-        Self {
-            uphill_slowdown_factor: 0.6,     // 60% speed when going uphill
-            downhill_speed_factor: 1.1,      // 110% speed when going downhill
-            max_traversable_slope: PI * 0.3, // About 54 degrees
-            slope_snap_force: 5.0,           // Force pushing down on slopes
-            current_slope_angle: 0.0,        // No slope initially
-            on_steep_slope: false,
         }
     }
 }
@@ -186,7 +160,6 @@ fn setup(
                 30.0,
                 0.92,
                 7.0,
-                (30.0 as Scalar).to_radians(),
         ),
         Friction::ZERO.with_combine_rule(CoefficientCombine::Min),
         Restitution::ZERO.with_combine_rule(CoefficientCombine::Min),

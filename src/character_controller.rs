@@ -38,11 +38,9 @@ impl Plugin for CharacterControllerPlugin {
                     controller_input::gamepad_input,
 
                     // State management
-                    controller_physics::update_grounded,
                     controller_state::update_player_states,
 
                     // Physics systems
-                    controller_physics::handle_slopes,
                     controller_physics::enhanced_gravity,
                     controller_physics::movement,
                     controller_physics::apply_movement_damping,
@@ -78,11 +76,6 @@ mod controller_components {
     #[derive(Component)]
     pub struct JumpImpulse(pub Scalar);
 
-    /// The maximum angle a slope can have for a character controller
-    /// to be able to climb and jump. If the slope is steeper than this angle,
-    /// the character will slide down.
-    #[derive(Component)]
-    pub struct MaxSlopeAngle(pub Scalar);
 
     /// A bundle that contains the components needed for a basic
     /// kinematic character controller.
@@ -102,7 +95,6 @@ mod controller_components {
         acceleration: MovementAcceleration,
         damping: MovementDampingFactor,
         jump_impulse: JumpImpulse,
-        max_slope_angle: MaxSlopeAngle,
     }
 
     impl MovementBundle {
@@ -110,20 +102,18 @@ mod controller_components {
             acceleration: Scalar,
             damping: Scalar,
             jump_impulse: Scalar,
-            max_slope_angle: Scalar,
         ) -> Self {
             Self {
                 acceleration: MovementAcceleration(acceleration),
                 damping: MovementDampingFactor(damping),
                 jump_impulse: JumpImpulse(jump_impulse),
-                max_slope_angle: MaxSlopeAngle(max_slope_angle),
             }
         }
     }
 
     impl Default for MovementBundle {
         fn default() -> Self {
-            Self::new(30.0, 0.9, 7.0, PI * 0.45)
+            Self::new(30.0, 0.9, 7.0)
         }
     }
 
@@ -154,9 +144,8 @@ mod controller_components {
             acceleration: Scalar,
             damping: Scalar,
             jump_impulse: Scalar,
-            max_slope_angle: Scalar,
         ) -> Self {
-            self.movement = MovementBundle::new(acceleration, damping, jump_impulse, max_slope_angle);
+            self.movement = MovementBundle::new(acceleration, damping, jump_impulse);
             self
         }
     }
@@ -438,114 +427,6 @@ mod controller_state {
 mod controller_physics {
     use super::*;
 
-    /// Updates the [`Grounded`] status for character controllers.
-    pub fn update_grounded(
-        mut commands: Commands,
-        mut query: Query<
-            (Entity, &ShapeHits, &Rotation, Option<&MaxSlopeAngle>),
-            With<CharacterController>,
-        >,
-    ) {
-        for (entity, hits, rotation, max_slope_angle) in &mut query {
-            // The character is grounded if the shape caster has a hit with a normal
-            // that isn't too steep.
-            let is_grounded = hits.iter().any(|hit| {
-                if let Some(angle) = max_slope_angle {
-                    (rotation * -hit.normal2).angle_between(Vector::Y).abs() <= angle.0
-                } else {
-                    true
-                }
-            });
-
-            if is_grounded {
-                commands.entity(entity).insert(Grounded);
-            } else {
-                commands.entity(entity).remove::<Grounded>();
-            }
-        }
-    }
-
-    pub fn handle_slopes(
-        mut player_query: Query<(&mut Player, &ShapeHits)>,
-        mut controllers: Query<(&mut LinearVelocity, Has<Grounded>)>,
-    ) {
-        let (Ok((mut player, shape_hits)), Ok((mut linear_velocity, is_grounded))) =
-            (player_query.get_single_mut(), controllers.get_single_mut()) else { return };
-
-        // Default to flat ground
-        player.slope.current_slope_angle = 0.0;
-        player.slope.on_steep_slope = false;
-
-        // Only process slopes when grounded
-        if is_grounded {
-            let mut steepest_angle = 0.0;
-            let mut steepest_normal = Vec3::Y;
-
-            // Find the steepest slope from all contact points
-            for hit in shape_hits.iter() {
-                let normal = hit.normal2;
-                let up_vector = Vec3::Y;
-
-                // Calculate angle between normal and up vector
-                let slope_angle = normal.angle_between(up_vector);
-
-                if slope_angle > steepest_angle {
-                    steepest_angle = slope_angle;
-                    steepest_normal = normal;
-                }
-            }
-
-            player.slope.current_slope_angle = steepest_angle;
-
-            // Check if slope is too steep to climb
-            if steepest_angle > player.slope.max_traversable_slope {
-                player.slope.on_steep_slope = true;
-
-                // On steep slopes, slide down
-                if steepest_normal != Vec3::Y {
-                    // Project the slope normal onto the horizontal plane
-                    let horizontal_normal = Vec3::new(steepest_normal.x, 0.0, steepest_normal.z).normalize_or_zero();
-
-                    // Apply sliding force down the slope
-                    let slide_strength = steepest_angle / (PI / 2.0) * 10.0; // Scale by steepness
-                    linear_velocity.x += horizontal_normal.x * slide_strength;
-                    linear_velocity.z += horizontal_normal.z * slide_strength;
-                }
-            } else if player.is_moving {
-                // On traversable slopes, calculate movement direction relative to velocity
-                let velocity_dir = Vec3::new(linear_velocity.x, 0.0, linear_velocity.z).normalize_or_zero();
-
-                // Project slope normal onto horizontal plane
-                let slope_horizontal = Vec3::new(steepest_normal.x, 0.0, steepest_normal.z).normalize_or_zero();
-
-                // Calculate dot product to see if we're going uphill or downhill
-                let going_uphill = velocity_dir.dot(slope_horizontal) < 0.0;
-
-                // Apply speed modifications
-                if going_uphill && steepest_angle > 0.1 {
-                    // Slow down when going uphill, more for steeper slopes
-                    let slope_factor = 1.0 - (steepest_angle / player.slope.max_traversable_slope)
-                        * (1.0 - player.slope.uphill_slowdown_factor);
-
-                    // Apply slowdown to current velocity
-                    linear_velocity.x *= slope_factor;
-                    linear_velocity.z *= slope_factor;
-
-                    // Apply extra downward force to prevent "launching" off slopes
-                    linear_velocity.y -= player.slope.slope_snap_force * steepest_angle;
-                } else if !going_uphill && steepest_angle > 0.1 {
-                    // Speed up slightly going downhill
-                    let slope_factor = 1.0 + (steepest_angle / player.slope.max_traversable_slope)
-                        * (player.slope.downhill_speed_factor - 1.0);
-
-                    // No need to apply to velocity since going downhill naturally accelerates
-                    // But we can apply a slope snap force to keep player on ground
-                    linear_velocity.y -= player.slope.slope_snap_force * slope_factor;
-                }
-            }
-        }
-    }
-
     /// Custom gravity system for improved jump feel
     pub fn enhanced_gravity(
         mut player_query: Query<(&Player, &mut GravityScale)>,
@@ -582,7 +463,6 @@ mod controller_physics {
             &MovementAcceleration,
             &JumpImpulse,
             &mut LinearVelocity,
-            Has<Grounded>,
             Entity,
         )>,
     ) {
@@ -607,7 +487,7 @@ mod controller_physics {
 
         // Handle rolling motion if player is rolling
         if player.is_rolling {
-            for (_, _, mut linear_velocity, _, _) in &mut controllers {
+            for (_, _, mut linear_velocity, _) in &mut controllers {
                 // Apply roll velocity
                 let roll_velocity = player.roll_direction * player.roll_speed * delta_time;
                 linear_velocity.x = roll_velocity.x as f32;
@@ -620,7 +500,7 @@ mod controller_physics {
 
         // If blocking and can't move while blocking, zero velocity and return
         if player.is_blocking && !player.can_move_while_blocking {
-            for (_, _, mut linear_velocity, _, _) in &mut controllers {
+            for (_, _, mut linear_velocity, _) in &mut controllers {
                 linear_velocity.x = 0.0;
                 linear_velocity.z = 0.0;
             }
@@ -629,7 +509,7 @@ mod controller_physics {
 
         // Normal movement processing
         for event in movement_event_reader.read() {
-            for (_, jump_impulse, mut linear_velocity, is_grounded, _entity) in &mut controllers {
+            for (_, jump_impulse, mut linear_velocity, _entity) in &mut controllers {
                 match event {
                     MovementAction::Move(movement, _) => {
                         if movement.length_squared() > 0.0 {
@@ -660,7 +540,7 @@ mod controller_physics {
                     }
                     MovementAction::Jump => {
                         // Allow jumping if grounded or within coyote time
-                        if is_grounded || player.coyote_timer > 0.0 {
+                        if player.coyote_timer > 0.0 {
                             linear_velocity.y = jump_impulse.0;
                             player.coyote_timer = 0.0; // Reset coyote timer after jump
                         }
@@ -669,7 +549,7 @@ mod controller_physics {
                 }
 
                 // Start coyote timer when leaving ground
-                if !is_grounded && player.coyote_timer <= 0.0 {
+                if player.coyote_timer <= 0.0 {
                     player.coyote_timer = player.coyote_time;
                 }
             }
