@@ -31,7 +31,7 @@ impl Plugin for CharacterControllerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<MovementAction>()
             .add_systems(
-                Update,
+                FixedUpdate,
                 (
                     // Input processing
                     controller_input::keyboard_input,
@@ -574,8 +574,10 @@ mod controller_physics {
     pub fn movement(
         time: Res<Time>,
         mut movement_event_reader: EventReader<MovementAction>,
-        camera_query: Query<&Transform, With<ThirdPersonCamera>>,
-        mut player_query: Query<(&mut Player, &Transform)>,
+        mut player_camera_set: ParamSet<(
+            Query<&Transform, With<ThirdPersonCamera>>,
+            Query<(&mut Player, &mut Transform)>,
+        )>,
         mut controllers: Query<(
             &MovementAcceleration,
             &JumpImpulse,
@@ -586,18 +588,22 @@ mod controller_physics {
     ) {
         let delta_time = time.delta_secs_f64().adjust_precision();
 
-        // Get camera transform - we'll use this for direction
-        let camera_transform = if let Ok(transform) = camera_query.get_single() {
-            transform
-        } else {
-            return; // No camera found, can't determine direction
-        };
+        // Get camera transform first and store it outside the query
+        let camera_transform = {
+            let camera_query = player_camera_set.p0();
+            if let Ok(transform) = camera_query.get_single() {
+                *transform // Clone the transform
+            } else {
+                return; // No camera found, can't determine direction
+            }
+        }; // Camera query borrow ends here
 
         // Extract the camera's yaw rotation (around Y axis)
         let camera_yaw = Quat::from_rotation_y(camera_transform.rotation.to_euler(EulerRot::YXZ).0);
 
-        // Process player state first
-        let (mut player, _) = player_query.single_mut();
+        // Now get the player query after the camera query borrow is dropped
+        let mut player_query = player_camera_set.p1();
+        let (mut player, mut player_transform) = player_query.single_mut();
 
         // Handle rolling motion if player is rolling
         if player.is_rolling {
@@ -633,9 +639,23 @@ mod controller_physics {
                             // Then rotate it by the camera's yaw
                             let movement_world = camera_yaw * movement_local;
 
-                            // Apply movement with player's current speed
+                            // Store normalized direction for rotation
+                            player.movement_direction = movement_world.normalize();
+
+                            // Apply movement velocity
                             linear_velocity.x = movement_world.x * player.current_speed * delta_time;
                             linear_velocity.z = movement_world.z * player.current_speed * delta_time;
+
+                            // Rotate player to face movement direction
+                            let target_rotation = Quat::from_rotation_y(
+                                f32::atan2(movement_world.x, movement_world.z)
+                            );
+
+                            // Smoothly interpolate rotation
+                            player_transform.rotation = player_transform.rotation.slerp(
+                                target_rotation,
+                                10.0 * time.delta_secs()
+                            );
                         }
                     }
                     MovementAction::Jump => {

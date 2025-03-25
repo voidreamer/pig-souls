@@ -35,6 +35,8 @@ pub struct Player {
     pub is_moving: bool,
     pub is_attacking: bool,
 
+    pub movement_direction: Vec3,
+
     // Movement speeds
     pub walk_speed: f32,
     pub run_speed: f32,
@@ -87,6 +89,8 @@ impl Default for Player {
         Self {
             is_moving: false,
             is_attacking: false,
+
+            movement_direction: Vec3::new(0.0, 0.0, 0.0),
 
             // Default movement speeds
             walk_speed: 200.0,       // Normal walking speed (increased as requested)
@@ -164,13 +168,21 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
+
+    let body_collider = Collider::round_cuboid(
+        0.2,
+        0.1,
+        1.0,
+        0.2
+    );
+
     commands.spawn((
         SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(CHARACTER_PATH))),
         MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
         Transform::from_xyz(0.0, 1.5, 0.0),
         Player::default(),
-        CharacterControllerBundle::new(
-            Collider::capsule(0.2, 0.15)).with_movement(
+        CharacterControllerBundle::new(body_collider)
+            .with_movement(
                 30.0,
                 0.92,
                 7.0,
@@ -180,5 +192,4 @@ fn setup(
         Restitution::ZERO.with_combine_rule(CoefficientCombine::Min),
         GravityScale(2.0),
     ));
-
 }
