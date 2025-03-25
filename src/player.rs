@@ -160,6 +160,7 @@ fn setup(
                 30.0,
                 0.92,
                 7.0,
+                (30.0 as Scalar).to_radians(),
         ),
         Friction::ZERO.with_combine_rule(CoefficientCombine::Min),
         Restitution::ZERO.with_combine_rule(CoefficientCombine::Min),

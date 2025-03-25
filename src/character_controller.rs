@@ -42,6 +42,7 @@ impl Plugin for CharacterControllerPlugin {
 
                     // Physics systems
                     controller_physics::enhanced_gravity,
+                    controller_physics::update_grounded,
                     controller_physics::movement,
                     controller_physics::apply_movement_damping,
                 ).run_if(in_state(AppState::InGame))
@@ -63,6 +64,12 @@ mod controller_components {
     #[derive(Component)]
     #[component(storage = "SparseSet")]
     pub struct Grounded;
+
+    /// The maximum angle a slope can have for a character controller
+    /// to be able to climb and jump. If the slope is steeper than this angle,
+    /// the character will slide down.
+    #[derive(Component)]
+    pub struct MaxSlopeAngle(pub(crate) Scalar);
 
     /// The acceleration used for character movement.
     #[derive(Component)]
@@ -95,6 +102,7 @@ mod controller_components {
         acceleration: MovementAcceleration,
         damping: MovementDampingFactor,
         jump_impulse: JumpImpulse,
+        max_slope_angle: MaxSlopeAngle,
     }
 
     impl MovementBundle {
@@ -102,18 +110,20 @@ mod controller_components {
             acceleration: Scalar,
             damping: Scalar,
             jump_impulse: Scalar,
+            max_slope_angle: Scalar,
         ) -> Self {
             Self {
                 acceleration: MovementAcceleration(acceleration),
                 damping: MovementDampingFactor(damping),
                 jump_impulse: JumpImpulse(jump_impulse),
+                max_slope_angle: MaxSlopeAngle(max_slope_angle),
             }
         }
     }
 
     impl Default for MovementBundle {
         fn default() -> Self {
-            Self::new(30.0, 0.9, 7.0)
+            Self::new(30.0, 0.9, 7.0, PI * 0.45)
         }
     }
 
@@ -144,8 +154,9 @@ mod controller_components {
             acceleration: Scalar,
             damping: Scalar,
             jump_impulse: Scalar,
+            max_slope_angle: Scalar,
         ) -> Self {
-            self.movement = MovementBundle::new(acceleration, damping, jump_impulse);
+            self.movement = MovementBundle::new(acceleration, damping, jump_impulse, max_slope_angle);
             self
         }
     }
@@ -552,6 +563,32 @@ mod controller_physics {
                 if player.coyote_timer <= 0.0 {
                     player.coyote_timer = player.coyote_time;
                 }
+            }
+        }
+    }
+
+    pub fn update_grounded(
+        mut commands: Commands,
+        mut query: Query<
+            (Entity, &ShapeHits, &Rotation, Option<&MaxSlopeAngle>),
+            With<CharacterController>,
+        >,
+    ) {
+        for (entity, hits, rotation, max_slope_angle) in &mut query {
+            // The character is grounded if the shape caster has a hit with a normal
+            // that isn't too steep.
+            let is_grounded = hits.iter().any(|hit| {
+                if let Some(angle) = max_slope_angle {
+                    (rotation * -hit.normal2).angle_between(Vector::Y).abs() <= angle.0
+                } else {
+                    true
+                }
+            });
+
+            if is_grounded {
+                commands.entity(entity).insert(Grounded);
+            } else {
+                commands.entity(entity).remove::<Grounded>();
             }
         }
     }
