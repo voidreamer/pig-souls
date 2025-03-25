@@ -2,16 +2,13 @@ use std::{f32::consts::PI, time::Duration};
 
 use bevy::{
     animation::{AnimationTargetId, RepeatAnimation},
-    color::palettes::css::WHITE,
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
 };
 use bevy::animation::AnimationTarget;
 use bevy::color::palettes::css::LIGHT_GRAY;
 use bevy::utils::HashSet;
-use bevy_hanabi::{EffectAsset, EffectMaterial, ParticleEffect};
-use rand::{thread_rng, Rng};
-use crate::fx::{handle_one_shot_effects, EffectHandles, OneShotParticleEffect};
+use crate::fx::{EffectHandles, OneShotParticleEffect};
 use crate::game_states::AppState;
 
 const FOX_PATH: &str = "models/animated/Fox.glb";
@@ -169,21 +166,6 @@ fn setup(
         animations: node_indices,
         graph: graph_handle,
     });
-
-    // Light
-    commands.spawn((
-        Transform::from_rotation(Quat::from_euler(EulerRot::ZYX, 0.0, 1.0, -PI / 4.)),
-        DirectionalLight {
-            shadows_enabled: true,
-            ..default()
-        },
-        CascadeShadowConfigBuilder {
-            first_cascade_far_bound: 200.0,
-            maximum_distance: 400.0,
-            ..default()
-        }
-            .build(),
-    ));
 
 }
 

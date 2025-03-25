@@ -159,16 +159,11 @@ impl Default for SlopeHandling {
     }
 }
 
-#[derive(Resource)]
-pub struct PlayerGltfHandle(pub Handle<Gltf>);
-
-
 fn setup(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-    commands.insert_resource(PlayerGltfHandle(asset_server.load(CHARACTER_PATH)));
     commands.spawn((
         SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(CHARACTER_PATH))),
         MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),

@@ -9,7 +9,7 @@ mod physics;
 mod world;
 
 use bevy::prelude::*;
-use bevy::window::{CursorGrabMode, CursorOptions, WindowResolution};
+use bevy::window::{WindowResolution};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_skein::SkeinPlugin;
 

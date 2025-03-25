@@ -1,6 +1,7 @@
+use std::f32::consts::PI;
 use avian3d::collision::{Collider, ColliderConstructor, ColliderConstructorHierarchy};
-use avian3d::PhysicsPlugins;
-use avian3d::prelude::{PhysicsDebugPlugin, PhysicsInterpolationPlugin, RigidBody};
+use avian3d::prelude::{RigidBody};
+use bevy::pbr::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
 use crate::game_states::AppState;
 
@@ -35,5 +36,20 @@ fn setup(
         Transform::from_rotation(Quat::from_rotation_y(-core::f32::consts::PI * 0.5)),
         ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
         RigidBody::Static,
+    ));
+
+    // Light
+    commands.spawn((
+        Transform::from_rotation(Quat::from_euler(EulerRot::ZYX, 0.0, 1.0, -PI / 4.)),
+        DirectionalLight {
+            shadows_enabled: true,
+            ..default()
+        },
+        CascadeShadowConfigBuilder {
+            first_cascade_far_bound: 200.0,
+            maximum_distance: 400.0,
+            ..default()
+        }
+            .build(),
     ));
 }

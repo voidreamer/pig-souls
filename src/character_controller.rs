@@ -288,7 +288,7 @@ mod controller_state {
         mut player_query: Query<(&mut Player, &Transform)>,
         camera_query: Query<&Transform, (With<ThirdPersonCamera>, Without<Player>)>,
     ) {
-        let (Ok((mut player, player_transform)), Ok(camera_transform)) =
+        let (Ok((mut player, _player_transform)), Ok(camera_transform)) =
             (player_query.get_single_mut(), camera_query.get_single()) else {
             return;
         };
@@ -540,7 +540,7 @@ mod controller_physics {
 
                     // No need to apply to velocity since going downhill naturally accelerates
                     // But we can apply a slope snap force to keep player on ground
-                    linear_velocity.y -= player.slope.slope_snap_force * 0.5;
+                    linear_velocity.y -= player.slope.slope_snap_force * slope_factor;
                 }
             }
         }
@@ -548,13 +548,10 @@ mod controller_physics {
 
     /// Custom gravity system for improved jump feel
     pub fn enhanced_gravity(
-        time: Res<Time>,
         mut player_query: Query<(&Player, &mut GravityScale)>,
         mut linear_velocity_query: Query<&mut LinearVelocity, With<Player>>,
     ) {
-        let delta = time.delta_secs();
-
-        if let (Ok((player, mut gravity_scale)), Ok(mut linear_velocity)) =
+        if let (Ok((player, mut gravity_scale)), Ok(linear_velocity)) =
             (player_query.get_single_mut(), linear_velocity_query.get_single_mut()) {
 
             // If we're falling, increase gravity
@@ -626,7 +623,7 @@ mod controller_physics {
 
         // Normal movement processing
         for event in movement_event_reader.read() {
-            for (_, jump_impulse, mut linear_velocity, is_grounded, entity) in &mut controllers {
+            for (_, jump_impulse, mut linear_velocity, is_grounded, _entity) in &mut controllers {
                 match event {
                     MovementAction::Move(movement, _) => {
                         if movement.length_squared() > 0.0 {
