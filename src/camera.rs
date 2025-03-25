@@ -193,7 +193,7 @@ impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(OnEnter(AppState::InGame), spawn_camera)
-            .add_systems(Update, third_person_camera.run_if(AppState::InGame))
+            .add_systems(Update, third_person_camera.run_if(in_state(AppState::InGame)))
             .add_plugins(TemporalAntiAliasPlugin);
     }
 }

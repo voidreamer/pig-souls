@@ -1,5 +1,7 @@
 use avian3d::{math::*, prelude::*};
 use bevy::{ecs::query::Has, prelude::*};
+use crate::camera::ThirdPersonCamera;
+use crate::player::Player;
 
 pub struct CharacterControllerPlugin;
 
@@ -11,6 +13,7 @@ impl Plugin for CharacterControllerPlugin {
                 keyboard_input,
                 gamepad_input,
                 update_grounded,
+                update_player_sprint_state,
                 movement,
                 apply_movement_damping,
             )
@@ -22,7 +25,7 @@ impl Plugin for CharacterControllerPlugin {
 /// An event sent for a movement input action.
 #[derive(Event)]
 pub enum MovementAction {
-    Move(Vector2),
+    Move(Vector2, bool), // Direction vector and sprint flag
     Jump,
 }
 
@@ -139,19 +142,21 @@ fn keyboard_input(
     let left = keyboard_input.any_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]);
     let right = keyboard_input.any_pressed([KeyCode::KeyD, KeyCode::ArrowRight]);
 
+    // Check if sprinting (any shift key)
+    let sprinting = keyboard_input.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+
     let horizontal = right as i8 - left as i8;
     let vertical = up as i8 - down as i8;
     let direction = Vector2::new(horizontal as Scalar, vertical as Scalar).clamp_length_max(1.0);
 
     if direction != Vector2::ZERO {
-        movement_event_writer.send(MovementAction::Move(direction));
+        movement_event_writer.send(MovementAction::Move(direction, sprinting));
     }
 
     if keyboard_input.just_pressed(KeyCode::Space) {
         movement_event_writer.send(MovementAction::Jump);
     }
 }
-
 /// Sends [`MovementAction`] events based on gamepad input.
 fn gamepad_input(
     mut movement_event_writer: EventWriter<MovementAction>,
@@ -162,8 +167,13 @@ fn gamepad_input(
             gamepad.get(GamepadAxis::LeftStickX),
             gamepad.get(GamepadAxis::LeftStickY),
         ) {
+            // Use Right Trigger or Right Shoulder for sprinting in gamepad
+            let sprint = gamepad.pressed(GamepadButton::RightTrigger2) ||
+                gamepad.pressed(GamepadButton::RightTrigger2);
+
             movement_event_writer.send(MovementAction::Move(
                 Vector2::new(x as Scalar, y as Scalar).clamp_length_max(1.0),
+                sprint,
             ));
         }
 
@@ -201,9 +211,71 @@ fn update_grounded(
 }
 
 /// Responds to [`MovementAction`] events and moves character controllers accordingly.
+fn update_player_sprint_state(
+    time: Res<Time>,
+    mut movement_events: EventReader<MovementAction>,
+    mut player_query: Query<&mut Player>,
+) {
+    let Ok(mut player) = player_query.get_single_mut() else { return };
+    let delta = time.delta_secs();
+
+    // Default to not moving/sprinting unless we see a Move event
+    player.is_moving = false;
+    let mut sprint_requested = false;
+
+    // Check for movement events
+    for event in movement_events.read() {
+        if let MovementAction::Move(direction, sprinting) = event {
+            if direction.length_squared() > 0.0 {
+                player.is_moving = true;
+
+                // Only consider sprinting if movement keys are pressed
+                if *sprinting {
+                    sprint_requested = true;
+                }
+            }
+        }
+    }
+
+    // Handle sprinting state and stamina
+    if sprint_requested && !player.exhausted && player.stamina > 0.0 {
+        // Player wants to sprint and has stamina
+        player.is_sprinting = true;
+        player.current_speed = player.run_speed;
+
+        // Reduce stamina while sprinting
+        player.stamina -= player.stamina_use_rate * delta;
+        if player.stamina <= 0.0 {
+            player.stamina = 0.0;
+            player.exhausted = true;
+            player.exhaustion_timer = 1.0; // 1 second cooldown before regen
+        }
+    } else {
+        // Not sprinting (either by choice or exhaustion)
+        player.is_sprinting = false;
+        player.current_speed = player.walk_speed;
+
+        // Handle stamina regeneration when not sprinting
+        if player.exhausted {
+            // Count down exhaust timer when exhausted
+            player.exhaustion_timer -= delta;
+            if player.exhaustion_timer <= 0.0 {
+                player.exhausted = false;
+            }
+        } else if !sprint_requested && player.stamina < player.max_stamina {
+            // Regenerate stamina when not sprinting and not exhausted
+            player.stamina += player.stamina_regen_rate * delta;
+            player.stamina = player.stamina.min(player.max_stamina);
+        }
+    }
+}
+
+// Replace the movement function in character_controller.rs
 fn movement(
     time: Res<Time>,
     mut movement_event_reader: EventReader<MovementAction>,
+    camera_query: Query<&Transform, With<ThirdPersonCamera>>,
+    player_query: Query<&Player>,
     mut controllers: Query<(
         &MovementAcceleration,
         &JumpImpulse,
@@ -211,18 +283,42 @@ fn movement(
         Has<Grounded>,
     )>,
 ) {
+    // Get player speed
+    let player_speed = if let Ok(player) = player_query.get_single() {
+        player.current_speed
+    } else {
+        30.0 // Default speed if player not found
+    };
+
     // Precision is adjusted so that the example works with
-    // both the `f32` and `f64` features. Otherwise you don't need this.
+    // both the `f32` and `f64` features.
     let delta_time = time.delta_secs_f64().adjust_precision();
 
+    // Get camera transform - we'll use this for direction
+    let camera_transform = if let Ok(transform) = camera_query.get_single() {
+        transform
+    } else {
+        return; // No camera found, can't determine direction
+    };
+
+    // Extract the camera's yaw rotation (around Y axis)
+    let camera_yaw = Quat::from_rotation_y(camera_transform.rotation.to_euler(EulerRot::YXZ).0);
+
     for event in movement_event_reader.read() {
-        for (movement_acceleration, jump_impulse, mut linear_velocity, is_grounded) in
-            &mut controllers
-        {
+        for (_, jump_impulse, mut linear_velocity, is_grounded) in &mut controllers {
             match event {
-                MovementAction::Move(direction) => {
-                    linear_velocity.x += direction.x * movement_acceleration.0 * delta_time;
-                    linear_velocity.z -= direction.y * movement_acceleration.0 * delta_time;
+                MovementAction::Move(movement, _) => {
+                    if movement.length_squared() > 0.0 {
+                        // Convert the input direction to be relative to camera orientation
+                        let movement_local = Vec3::new(movement.x, 0.0, -movement.y);
+
+                        // Then rotate it by the camera's yaw
+                        let movement_world = camera_yaw * movement_local;
+
+                        // Apply movement with player's current speed
+                        linear_velocity.x = movement_world.x * player_speed * delta_time;
+                        linear_velocity.z = movement_world.z * player_speed * delta_time;
+                    }
                 }
                 MovementAction::Jump => {
                     if is_grounded {
@@ -234,11 +330,28 @@ fn movement(
     }
 }
 
-/// Slows down movement in the XZ plane.
-fn apply_movement_damping(mut query: Query<(&MovementDampingFactor, &mut LinearVelocity)>) {
-    for (damping_factor, mut linear_velocity) in &mut query {
-        // We could use `LinearDamping`, but we don't want to dampen movement along the Y axis
-        linear_velocity.x *= damping_factor.0;
-        linear_velocity.z *= damping_factor.0;
+// Update the apply_movement_damping function for consistency
+fn apply_movement_damping(
+    mut event_reader: EventReader<MovementAction>,
+    mut query: Query<(&MovementDampingFactor, &mut LinearVelocity)>
+) {
+    // Check if any movement occurred this frame
+    let mut moving = false;
+    for event in event_reader.read() {
+        if let MovementAction::Move(dir, _) = event {
+            if dir.length_squared() > 0.0 {
+                moving = true;
+                break;
+            }
+        }
+    }
+
+    // Only apply damping if not actively moving
+    if !moving {
+        for (damping_factor, mut linear_velocity) in &mut query {
+            // We could use `LinearDamping`, but we don't want to dampen movement along the Y axis
+            linear_velocity.x *= damping_factor.0;
+            linear_velocity.z *= damping_factor.0;
+        }
     }
 }

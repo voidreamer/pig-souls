@@ -34,7 +34,6 @@ impl Plugin for AnimationTestPlugin {
                     handle_button_toggles,
                     update_ui,
                     setup_animation_graph_once_loaded,
-                    handle_one_shot_effects,
                     keyboard_animation_control
                 ).run_if(in_state(AppState::InGame)));
     }

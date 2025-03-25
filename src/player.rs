@@ -13,6 +13,7 @@
 
 use crate::character_controller;
 use avian3d::{math::*, prelude::*};
+use avian3d::parry::shape::Capsule;
 use bevy::prelude::*;
 use character_controller::*;
 use crate::game_states::AppState;
@@ -29,10 +30,17 @@ impl Plugin for PlayerPlugin {
 
 const CHARACTER_PATH: &str = "models/animated/Fox.glb";
 
+// Update your Player struct in src/player.rs to include speed variables
 #[derive(Component)]
 pub struct Player {
     pub is_moving: bool,
-    pub is_attacking: bool,    // Flag for attack animation state
+    pub is_attacking: bool,
+
+    // Movement speeds
+    pub walk_speed: f32,
+    pub run_speed: f32,
+    pub current_speed: f32,
+    pub is_sprinting: bool,
 
     // Added for UI
     pub health: f32,
@@ -41,8 +49,8 @@ pub struct Player {
     pub max_stamina: f32,
     pub stamina_regen_rate: f32,
     pub stamina_use_rate: f32,
-    pub exhausted: bool,       // Flag for when stamina is depleted
-    pub exhaustion_timer: f32, // Time before stamina starts regenerating
+    pub exhausted: bool,
+    pub exhaustion_timer: f32,
 }
 
 impl Default for Player {
@@ -51,13 +59,19 @@ impl Default for Player {
             is_moving: false,
             is_attacking: false,
 
+            // Default movement speeds
+            walk_speed: 200.0,       // Normal walking speed
+            run_speed: 400.0,        // Sprint speed when holding Shift
+            current_speed: 200.0,    // Start at walking speed
+            is_sprinting: false,    // Not sprinting initially
+
             // Stats
             health: 100.0,
             max_health: 100.0,
             stamina: 100.0,
             max_stamina: 100.0,
-            stamina_regen_rate: 30.0, // Stamina gained per second when not using
-            stamina_use_rate: 15.0,   // Stamina used per second when running
+            stamina_regen_rate: 30.0,
+            stamina_use_rate: 15.0,
             exhausted: false,
             exhaustion_timer: 0.0,
         }
@@ -76,6 +90,7 @@ fn setup(
 ) {
     // Player
     commands.spawn((
+        Mesh3d(meshes.add(Capsule3d::new(0.4, 1.0))),
         SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(CHARACTER_PATH))),
         MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
         Transform::from_xyz(0.0, 1.5, 0.0),

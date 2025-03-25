@@ -325,6 +325,7 @@ impl Plugin for FXPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(OnEnter(AppState::InGame), start_fx_resources)
+            .add_systems(Update, handle_one_shot_effects)
             .add_plugins(HanabiPlugin);
     }
 }
