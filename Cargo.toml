@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bevy = {version = "*", features = ["dynamic_linking"]}
+avian3d = {version = "*"}
 bevy_hanabi = {git = "https://github.com/djeedai/bevy_hanabi", branch="main", default-features = true, features = [ "3d", "serde" ] }
 bevy_skein = "*"
 

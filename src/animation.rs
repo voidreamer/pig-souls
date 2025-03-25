@@ -11,8 +11,8 @@ use bevy::color::palettes::css::LIGHT_GRAY;
 use bevy::utils::HashSet;
 use bevy_hanabi::{EffectAsset, EffectMaterial, ParticleEffect};
 use rand::{thread_rng, Rng};
+use crate::fx::{handle_one_shot_effects, EffectHandles, OneShotParticleEffect};
 use crate::game_states::AppState;
-use crate::fx::*;
 
 const FOX_PATH: &str = "models/animated/Fox.glb";
 
@@ -21,7 +21,6 @@ pub struct AnimationTestPlugin;
 impl Plugin for AnimationTestPlugin {
     fn build(&self, app: &mut App) {
         app
-            .init_resource::<ParticleAssets>()
             .init_resource::<FoxFeetTargets>()
             .init_resource::<FoxAppState>()
             .init_resource::<Animations>()
@@ -31,12 +30,10 @@ impl Plugin for AnimationTestPlugin {
                 brightness: 2000.,
             })
                 .add_systems(OnEnter(AppState::InGame), (setup, setup_ui))
-                //.add_systems(Update, setup_scene_once_loaded.run_if(in_state(AppState::InGame)))
                 .add_systems(Update, (
                     handle_button_toggles,
                     update_ui,
                     setup_animation_graph_once_loaded,
-                    simulate_particles,
                     handle_one_shot_effects,
                     keyboard_animation_control
                 ).run_if(in_state(AppState::InGame)));
@@ -152,14 +149,11 @@ fn observe_on_step(
             1.5
         ),
     ));
-
 }
 
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
 ) {
 
@@ -177,18 +171,6 @@ fn setup(
         graph: graph_handle,
     });
 
-    // Camera
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(100.0, 100.0, 150.0).looking_at(Vec3::new(0.0, 20.0, 0.0), Vec3::Y),
-    ));
-
-    // Plane
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(500000.0, 500000.0))),
-        MeshMaterial3d(materials.add(Color::srgb(0.3, 0.5, 0.3))),
-    ));
-
     // Light
     commands.spawn((
         Transform::from_rotation(Quat::from_euler(EulerRot::ZYX, 0.0, 1.0, -PI / 4.)),
@@ -205,17 +187,12 @@ fn setup(
     ));
 
     // Fox
-    commands.spawn(SceneRoot(
-        asset_server.load(GltfAssetLabel::Scene(0).from_asset(FOX_PATH)),
+    commands.spawn((
+       Transform::from_scale(Vec3::splat(0.01)),
+       SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(FOX_PATH)))
     ));
 
-    println!("Animation controls:");
-    println!("  - spacebar: play / pause");
-    println!("  - arrow up / down: speed up / slow down animation playback");
-    println!("  - arrow left / right: seek backward / forward");
-    println!("  - digit 1 / 3 / 5: play the animation <digit> times");
-    println!("  - L: loop the animation forever");
-    println!("  - return: change animation");
+
 }
 
 fn get_clip<'a>(
@@ -308,46 +285,6 @@ fn setup_animation_graph_once_loaded(
     }
 }
 
-// An `AnimationPlayer` is automatically added to the scene when it's ready.
-// When the player is added, start the animation.
-fn setup_scene_once_loaded(
-    mut commands: Commands,
-    animations: Res<Animations>,
-    feet: Res<FoxFeetTargets>,
-    graphs: Res<Assets<AnimationGraph>>,
-    mut clips: ResMut<Assets<AnimationClip>>,
-    mut players: Query<(Entity, &mut AnimationPlayer), Added<AnimationPlayer>>,
-) {
-
-    for (entity, mut player) in &mut players {
-        let graph = graphs.get(&animations.graph).unwrap();
-
-        // Send `OnStep` events once the fox feet hits the ground in the running animation.
-        let running_animation = get_clip(animations.animations[0], graph, &mut clips);
-        // You can determine the time an event should trigger if you know witch frame it occurs and
-        // the frame rate of the animation. Let's say we want to trigger an event at frame 15,
-        // and the animation has a frame rate of 24 fps, then time = 15 / 24 = 0.625.
-        running_animation.add_event_to_target(feet.front_left, 0.625, OnStep);
-        running_animation.add_event_to_target(feet.front_right, 0.5, OnStep);
-        running_animation.add_event_to_target(feet.back_left, 0.0, OnStep);
-        running_animation.add_event_to_target(feet.back_right, 0.125, OnStep);
-
-        let mut transitions = AnimationTransitions::new();
-
-        // Make sure to start the animation via the `AnimationTransitions`
-        // component. The `AnimationTransitions` component wants to manage all
-        // the animations and will get confused if the animations are started
-        // directly via the `AnimationPlayer`.
-        transitions
-            .play(&mut player, animations.animations[0], Duration::ZERO)
-            .repeat();
-
-        commands
-            .entity(entity)
-            .insert(AnimationGraphHandle(animations.graph.clone()))
-            .insert(transitions);
-    }
-}
 // Adds a button that allows the user to toggle a mask group on and off.
 //
 // The button will automatically become a child of the parent that owns the
@@ -692,77 +629,6 @@ fn keyboard_animation_control(
     }
 }
 
-fn simulate_particles(
-    mut commands: Commands,
-    mut query: Query<(Entity, &mut Transform, &mut Particle)>,
-    time: Res<Time>,
-) {
-    for (entity, mut transform, mut particle) in &mut query {
-        if particle.lifeteime_timer.tick(time.delta()).just_finished() {
-            commands.entity(entity).despawn();
-        } else {
-            transform.translation += particle.velocity * time.delta_secs();
-            transform.scale =
-                Vec3::splat(particle.size.lerp(0.0, particle.lifeteime_timer.fraction()));
-            particle
-                .velocity
-                .smooth_nudge(&Vec3::ZERO, 4.0, time.delta_secs());
-        }
-    }
-}
-
-fn spawn_particle<M: Material>(
-    mesh: Handle<Mesh>,
-    material: Handle<M>,
-    translation: Vec3,
-    lifetime: f32,
-    size: f32,
-    velocity: Vec3,
-) -> impl Command {
-    move |world: &mut World| {
-        world.spawn((
-            Particle {
-                lifeteime_timer: Timer::from_seconds(lifetime, TimerMode::Once),
-                size,
-                velocity,
-            },
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
-            Transform {
-                translation,
-                scale: Vec3::splat(size),
-                ..Default::default()
-            },
-        ));
-    }
-}
-
-#[derive(Component)]
-struct Particle {
-    lifeteime_timer: Timer,
-    size: f32,
-    velocity: Vec3,
-}
-
-#[derive(Resource)]
-struct ParticleAssets {
-    mesh: Handle<Mesh>,
-    material: Handle<StandardMaterial>,
-}
-
-impl FromWorld for ParticleAssets {
-    fn from_world(world: &mut World) -> Self {
-        Self {
-            mesh: world.resource_mut::<Assets<Mesh>>().add(Sphere::new(10.0)),
-            material: world
-                .resource_mut::<Assets<StandardMaterial>>()
-                .add(StandardMaterial {
-                    base_color: WHITE.into(),
-                    ..Default::default()
-                }),
-        }
-    }
-}
 
 #[derive(Resource)]
 struct FoxFeetTargets {

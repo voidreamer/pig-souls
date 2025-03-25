@@ -262,7 +262,7 @@ fn start_fx_resources(
     let fire_step_effect= create_fire_step_effect(
         &mut effects,
         Vec3::ZERO,
-        5.0
+        0.1
     );
     commands.insert_resource(EffectHandles {
         spark: spark_effect.clone(),
