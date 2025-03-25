@@ -13,7 +13,8 @@ impl Plugin for CharacterControllerPlugin {
                 keyboard_input,
                 gamepad_input,
                 update_grounded,
-                update_player_sprint_state,
+                update_player_states,
+                enhanced_gravity,
                 movement,
                 apply_movement_damping,
             )
@@ -27,6 +28,9 @@ impl Plugin for CharacterControllerPlugin {
 pub enum MovementAction {
     Move(Vector2, bool), // Direction vector and sprint flag
     Jump,
+    Roll(Vector2),      // Direction to roll in
+    StartBlock,         // Start blocking
+    EndBlock,           // Stop blocking
 }
 
 /// A marker component indicating that an entity is using a character controller.
@@ -136,7 +140,12 @@ impl CharacterControllerBundle {
 fn keyboard_input(
     mut movement_event_writer: EventWriter<MovementAction>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    player_query: Query<&Player>,
 ) {
+    let Ok(player) = player_query.get_single() else { return };
+
+    // Basic movement
     let up = keyboard_input.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]);
     let down = keyboard_input.any_pressed([KeyCode::KeyS, KeyCode::ArrowDown]);
     let left = keyboard_input.any_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]);
@@ -145,24 +154,52 @@ fn keyboard_input(
     // Check if sprinting (any shift key)
     let sprinting = keyboard_input.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
 
+    // Calculate movement direction
     let horizontal = right as i8 - left as i8;
     let vertical = up as i8 - down as i8;
     let direction = Vector2::new(horizontal as Scalar, vertical as Scalar).clamp_length_max(1.0);
 
-    if direction != Vector2::ZERO {
+    // Send movement event if there's input and not rolling
+    if direction != Vector2::ZERO && !player.is_rolling {
         movement_event_writer.send(MovementAction::Move(direction, sprinting));
     }
 
-    if keyboard_input.just_pressed(KeyCode::Space) {
+    // Handle jump
+    if keyboard_input.just_pressed(KeyCode::ControlLeft) && !player.is_rolling {
         movement_event_writer.send(MovementAction::Jump);
     }
+
+    // Handle roll with double-tap shift or dedicated key (Space)
+    if keyboard_input.just_pressed(KeyCode::Space) && player.can_roll && !player.is_rolling && !player.exhausted {
+        // Use the current movement direction for rolling, or forward if not moving
+        let roll_direction = if direction != Vector2::ZERO {
+            direction
+        } else {
+            Vector2::new(0.0, 1.0) // Default to forward
+        };
+
+        movement_event_writer.send(MovementAction::Roll(roll_direction));
+    }
+
+    // Handle blocking (right mouse button)
+    if mouse_input.just_pressed(MouseButton::Right) && !player.is_rolling {
+        movement_event_writer.send(MovementAction::StartBlock);
+    }
+    if mouse_input.just_released(MouseButton::Right) && player.is_blocking {
+        movement_event_writer.send(MovementAction::EndBlock);
+    }
 }
-/// Sends [`MovementAction`] events based on gamepad input.
+
+// Update the gamepad_input function for new controls
 fn gamepad_input(
     mut movement_event_writer: EventWriter<MovementAction>,
     gamepads: Query<&Gamepad>,
+    player_query: Query<&Player>,
 ) {
+    let Ok(player) = player_query.get_single() else { return };
+
     for gamepad in gamepads.iter() {
+        // Movement with left stick
         if let (Some(x), Some(y)) = (
             gamepad.get(GamepadAxis::LeftStickX),
             gamepad.get(GamepadAxis::LeftStickY),
@@ -171,18 +208,45 @@ fn gamepad_input(
             let sprint = gamepad.pressed(GamepadButton::RightTrigger2) ||
                 gamepad.pressed(GamepadButton::RightTrigger2);
 
-            movement_event_writer.send(MovementAction::Move(
-                Vector2::new(x as Scalar, y as Scalar).clamp_length_max(1.0),
-                sprint,
-            ));
+            let direction = Vector2::new(x as Scalar, y as Scalar).clamp_length_max(1.0);
+
+            // Only send movement if not rolling
+            if direction.length_squared() > 0.01 && !player.is_rolling {
+                movement_event_writer.send(MovementAction::Move(direction, sprint));
+            }
         }
 
-        if gamepad.just_pressed(GamepadButton::South) {
+        // Jump (A/Cross button)
+        if gamepad.just_pressed(GamepadButton::South) && !player.is_rolling {
             movement_event_writer.send(MovementAction::Jump);
+        }
+
+        // Roll (Circle button)
+        if gamepad.just_pressed(GamepadButton::East) && player.can_roll && !player.is_rolling && !player.exhausted {
+            // Get current direction from left stick
+            let x = gamepad.get(GamepadAxis::LeftStickX).unwrap_or(0.0);
+            let y = gamepad.get(GamepadAxis::LeftStickY).unwrap_or(0.0);
+            let direction = Vector2::new(x as Scalar, y as Scalar);
+
+            // Use current direction, or forward if stick is neutral
+            let roll_direction = if direction.length_squared() > 0.01 {
+                direction.clamp_length_max(1.0)
+            } else {
+                Vector2::new(0.0, 1.0) // Default to forward
+            };
+
+            movement_event_writer.send(MovementAction::Roll(roll_direction));
+        }
+
+        // Block with R2/Right Trigger
+        if gamepad.just_pressed(GamepadButton::RightTrigger) && !player.is_rolling {
+            movement_event_writer.send(MovementAction::StartBlock);
+        }
+        if gamepad.just_released(GamepadButton::RightTrigger) && player.is_blocking {
+            movement_event_writer.send(MovementAction::EndBlock);
         }
     }
 }
-
 /// Updates the [`Grounded`] status for character controllers.
 fn update_grounded(
     mut commands: Commands,
@@ -211,34 +275,118 @@ fn update_grounded(
 }
 
 /// Responds to [`MovementAction`] events and moves character controllers accordingly.
-fn update_player_sprint_state(
+fn update_player_states(
     time: Res<Time>,
     mut movement_events: EventReader<MovementAction>,
-    mut player_query: Query<&mut Player>,
+    mut player_query: Query<(&mut Player, &Transform)>,
+    camera_query: Query<&Transform, (With<ThirdPersonCamera>, Without<Player>)>,
 ) {
-    let Ok(mut player) = player_query.get_single_mut() else { return };
+    let (Ok(mut player), Ok(camera_transform)) = (player_query.get_single_mut(), camera_query.get_single()) else {
+        return;
+    };
+
+    let (mut player, player_transform) = player_query.single_mut();
     let delta = time.delta_secs();
 
     // Default to not moving/sprinting unless we see a Move event
     player.is_moving = false;
     let mut sprint_requested = false;
+    let mut roll_requested = false;
+    let mut roll_direction = Vector2::ZERO;
+    let mut block_start_requested = false;
+    let mut block_end_requested = false;
 
-    // Check for movement events
+    // Process all movement events for this frame
     for event in movement_events.read() {
-        if let MovementAction::Move(direction, sprinting) = event {
-            if direction.length_squared() > 0.0 {
-                player.is_moving = true;
-
-                // Only consider sprinting if movement keys are pressed
-                if *sprinting {
-                    sprint_requested = true;
+        match event {
+            MovementAction::Move(direction, sprinting) => {
+                if direction.length_squared() > 0.0 {
+                    player.is_moving = true;
+                    // Only consider sprinting if movement keys are pressed
+                    if *sprinting {
+                        sprint_requested = true;
+                    }
                 }
-            }
+            },
+            MovementAction::Roll(direction) => {
+                roll_requested = true;
+                roll_direction = *direction;
+            },
+            MovementAction::StartBlock => {
+                block_start_requested = true;
+            },
+            MovementAction::EndBlock => {
+                block_end_requested = true;
+            },
+            _ => {}
+        }
+    }
+
+    // Handle roll state and timer
+    if player.is_rolling {
+        player.roll_timer -= delta;
+        if player.roll_timer <= 0.0 {
+            // Roll finished
+            player.is_rolling = false;
+            player.roll_timer = 0.0;
+            // Start cooldown
+            player.roll_cooldown_timer = player.roll_cooldown;
+            player.can_roll = false;
+        }
+    } else if !player.can_roll {
+        // Handle roll cooldown
+        player.roll_cooldown_timer -= delta;
+        if player.roll_cooldown_timer <= 0.0 {
+            player.can_roll = true;
+            player.roll_cooldown_timer = 0.0;
+        }
+    }
+
+    // Process new roll request if player can roll and has stamina
+    if roll_requested && player.can_roll && !player.is_rolling && !player.exhausted && player.stamina >= player.roll_stamina_cost {
+        // Start rolling
+        player.is_rolling = true;
+        player.roll_timer = player.roll_duration;
+
+        // Convert input direction to world space using camera orientation
+        let camera_yaw = Quat::from_rotation_y(camera_transform.rotation.to_euler(EulerRot::YXZ).0);
+        let local_direction = Vec3::new(roll_direction.x, 0.0, -roll_direction.y);
+        player.roll_direction = camera_yaw * local_direction;
+
+        // Consume stamina
+        player.stamina -= player.roll_stamina_cost;
+        if player.stamina < 0.0 {
+            player.stamina = 0.0;
+        }
+
+        // End blocking if player was blocking
+        player.is_blocking = false;
+    }
+
+    // Handle blocking state changes
+    if block_start_requested && !player.is_rolling && !player.exhausted {
+        player.is_blocking = true;
+    }
+
+    if block_end_requested || player.is_rolling {
+        player.is_blocking = false;
+    }
+
+    // Apply stamina cost for blocking
+    if player.is_blocking {
+        player.stamina -= player.block_stamina_cost_per_sec * delta;
+
+        // Stop blocking if stamina depletes
+        if player.stamina <= 0.0 {
+            player.stamina = 0.0;
+            player.exhausted = true;
+            player.exhaustion_timer = 1.0;
+            player.is_blocking = false;
         }
     }
 
     // Handle sprinting state and stamina
-    if sprint_requested && !player.exhausted && player.stamina > 0.0 {
+    if !player.is_rolling && !player.is_blocking && sprint_requested && !player.exhausted && player.stamina > 0.0 {
         // Player wants to sprint and has stamina
         player.is_sprinting = true;
         player.current_speed = player.run_speed;
@@ -250,48 +398,79 @@ fn update_player_sprint_state(
             player.exhausted = true;
             player.exhaustion_timer = 1.0; // 1 second cooldown before regen
         }
-    } else {
-        // Not sprinting (either by choice or exhaustion)
+    } else if !player.is_rolling {
+        // Set speed based on blocking state
         player.is_sprinting = false;
-        player.current_speed = player.walk_speed;
+        if player.is_blocking && player.can_move_while_blocking {
+            player.current_speed = player.walk_speed * player.block_movement_penalty;
+        } else if !player.is_blocking {
+            player.current_speed = player.walk_speed;
+        }
 
-        // Handle stamina regeneration when not sprinting
+        // Handle stamina regeneration when not using stamina abilities
         if player.exhausted {
             // Count down exhaust timer when exhausted
             player.exhaustion_timer -= delta;
             if player.exhaustion_timer <= 0.0 {
                 player.exhausted = false;
             }
-        } else if !sprint_requested && player.stamina < player.max_stamina {
-            // Regenerate stamina when not sprinting and not exhausted
+        } else if !sprint_requested && !player.is_rolling && !player.is_blocking && player.stamina < player.max_stamina {
+            // Regenerate stamina when not using stamina
             player.stamina += player.stamina_regen_rate * delta;
             player.stamina = player.stamina.min(player.max_stamina);
         }
     }
+
+    // Handle coyote time for jump improvements
+    if player.coyote_timer > 0.0 {
+        player.coyote_timer -= delta;
+    }
 }
 
-// Replace the movement function in character_controller.rs
+// Custom gravity system for improved jump feel
+fn enhanced_gravity(
+    time: Res<Time>,
+    mut player_query: Query<(&Player, &mut GravityScale)>,
+    mut linear_velocity_query: Query<&mut LinearVelocity, With<Player>>,
+) {
+    let delta = time.delta_secs();
+
+    if let (Ok((player, mut gravity_scale)), Ok(mut linear_velocity)) =
+        (player_query.get_single_mut(), linear_velocity_query.get_single_mut()) {
+
+        // If we're falling, increase gravity
+        if linear_velocity.y < 0.0 {
+            // Apply fall multiplier for faster descent
+            gravity_scale.0 = 2.0 * player.fall_multiplier;
+        }
+        // If we're rising but jump button was released, apply low jump multiplier
+        else if linear_velocity.y > 0.0 {
+            // Check if jump is active but button released
+            // We could track button release in another system or use a different approach
+            // For now, we'll just use a simplified version with fall_multiplier
+            gravity_scale.0 = 2.0;
+        }
+        else {
+            // Default gravity scale
+            gravity_scale.0 = 2.0;
+        }
+    }
+}
+
+// Update the movement function to handle rolling state
 fn movement(
     time: Res<Time>,
     mut movement_event_reader: EventReader<MovementAction>,
     camera_query: Query<&Transform, With<ThirdPersonCamera>>,
-    player_query: Query<&Player>,
+    mut player_query: Query<(&mut Player, &Transform)>,
     mut controllers: Query<(
         &MovementAcceleration,
         &JumpImpulse,
         &mut LinearVelocity,
         Has<Grounded>,
+        Entity,
     )>,
 ) {
-    // Get player speed
-    let player_speed = if let Ok(player) = player_query.get_single() {
-        player.current_speed
-    } else {
-        30.0 // Default speed if player not found
-    };
-
-    // Precision is adjusted so that the example works with
-    // both the `f32` and `f64` features.
     let delta_time = time.delta_secs_f64().adjust_precision();
 
     // Get camera transform - we'll use this for direction
@@ -304,8 +483,34 @@ fn movement(
     // Extract the camera's yaw rotation (around Y axis)
     let camera_yaw = Quat::from_rotation_y(camera_transform.rotation.to_euler(EulerRot::YXZ).0);
 
+    // Process player state first
+    let (mut player, _) = player_query.single_mut();
+
+    // Handle rolling motion if player is rolling
+    if player.is_rolling {
+        for (_, _, mut linear_velocity, _, _) in &mut controllers {
+            // Apply roll velocity
+            let roll_velocity = player.roll_direction * player.roll_speed * delta_time;
+            linear_velocity.x = roll_velocity.x as f32;
+            linear_velocity.z = roll_velocity.z as f32;
+        }
+
+        // Skip normal movement processing if rolling
+        return;
+    }
+
+    // If blocking and can't move while blocking, zero velocity and return
+    if player.is_blocking && !player.can_move_while_blocking {
+        for (_, _, mut linear_velocity, _, _) in &mut controllers {
+            linear_velocity.x = 0.0;
+            linear_velocity.z = 0.0;
+        }
+        return;
+    }
+
+    // Normal movement processing
     for event in movement_event_reader.read() {
-        for (_, jump_impulse, mut linear_velocity, is_grounded) in &mut controllers {
+        for (_, jump_impulse, mut linear_velocity, is_grounded, entity) in &mut controllers {
             match event {
                 MovementAction::Move(movement, _) => {
                     if movement.length_squared() > 0.0 {
@@ -316,20 +521,27 @@ fn movement(
                         let movement_world = camera_yaw * movement_local;
 
                         // Apply movement with player's current speed
-                        linear_velocity.x = movement_world.x * player_speed * delta_time;
-                        linear_velocity.z = movement_world.z * player_speed * delta_time;
+                        linear_velocity.x = movement_world.x * player.current_speed * delta_time;
+                        linear_velocity.z = movement_world.z * player.current_speed * delta_time;
                     }
                 }
                 MovementAction::Jump => {
-                    if is_grounded {
+                    // Allow jumping if grounded or within coyote time
+                    if is_grounded || player.coyote_timer > 0.0 {
                         linear_velocity.y = jump_impulse.0;
+                        player.coyote_timer = 0.0; // Reset coyote timer after jump
                     }
                 }
+                _ => {}
+            }
+
+            // Start coyote timer when leaving ground
+            if !is_grounded && player.coyote_timer <= 0.0 {
+                player.coyote_timer = player.coyote_time;
             }
         }
     }
 }
-
 // Update the apply_movement_damping function for consistency
 fn apply_movement_damping(
     mut event_reader: EventReader<MovementAction>,
