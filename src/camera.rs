@@ -222,6 +222,7 @@ pub fn third_person_camera(
     }
 }
 
+// Camera collision detection with stable behavior that maintains character visibility
 pub fn camera_collision_detection(
     player_query: Query<(Entity, &Transform), (With<Player>, Without<ThirdPersonCamera>)>,
     mut camera_query: Query<(&mut Transform, &ThirdPersonCamera), Without<Player>>,
@@ -232,79 +233,92 @@ pub fn camera_collision_detection(
     let Ok((player_entity, player_transform)) = player_query.get_single() else { return };
     let Ok((mut camera_transform, camera_params)) = camera_query.get_single_mut() else { return };
 
-    // Player position (with a slight vertical offset to match eye level)
-    let player_position = player_transform.translation + Vec3::Y * camera_params.height_offset * 0.5;
+    let player_position = player_transform.translation;
 
-    // Create a rotation from the camera's current orientation
-    let pitch_rot = Quat::from_rotation_x(camera_params.pitch);
-    let yaw_rot = Quat::from_rotation_y(camera_params.yaw);
-    let camera_rotation = yaw_rot * pitch_rot;
+    // Get current camera-to-player vector (this is the line of sight we want to preserve)
+    let camera_to_player = player_position - camera_transform.translation;
+    let distance_to_player = camera_to_player.length();
 
-    // Calculate the ideal orbital camera position (no collision)
-    let camera_offset = camera_rotation * Vec3::new(
-        0.0,
-        camera_params.height_offset,
-        camera_params.distance
-    );
-    let ideal_camera_position = player_position - camera_offset;
+    // If the camera is too close to the player, no need to do collision checks
+    if distance_to_player < 1.0 {
+        return;
+    }
 
-    // Direction from player to camera
-    let direction = (ideal_camera_position - player_position).normalize();
+    // Normalized direction from camera to player (reverse of the usual direction)
+    let direction = camera_to_player.normalize();
     let dir3 = match Dir3::new(direction) {
         Ok(d) => d,
-        Err(_) => return, // Invalid direction, skip collision check
+        Err(_) => return,
     };
 
     // Create a shape for the camera collision
     let camera_shape = Collider::sphere(0.3);
 
     // Create a filter that excludes the player entity
-    let filter = SpatialQueryFilter::default().with_excluded_entities([player_entity]);
+    let filter = SpatialQueryFilter::default().with_excluded_entities(
+        [player_entity]
+    );
 
-    // Configure the shape cast
+    // Configure the shape cast - cast FROM camera TOWARD player
     let config = ShapeCastConfig {
-        max_distance: camera_params.distance * 1.2, // Max distance slightly longer than camera distance
-        target_distance: camera_params.distance,    // Preferred distance
-        compute_contact_on_penetration: true,       // Compute contact info when penetrating
-        ignore_origin_penetration: true,            // Ignore if already penetrating at origin
+        max_distance: distance_to_player,
+        target_distance: distance_to_player,
+        compute_contact_on_penetration: true,
+        ignore_origin_penetration: true,
     };
 
-    // Target position for the camera (will be modified if collision occurs)
-    let mut target_position = ideal_camera_position;
+    // Calculate the ideal camera position from the player's perspective
+    let pitch_rot = Quat::from_rotation_x(camera_params.pitch);
+    let yaw_rot = Quat::from_rotation_y(camera_params.yaw);
+    let camera_rotation = yaw_rot * pitch_rot;
 
-    // Perform the shape cast
+    let ideal_offset = camera_rotation * Vec3::new(
+        0.0,
+        camera_params.height_offset,
+        camera_params.distance
+    );
+    let ideal_position = player_position - ideal_offset;
+
+    // Check if there's a wall between camera and player
+    // We cast FROM camera TO player to check if view is obstructed
     if let Some(hit) = spatial_query.cast_shape(
         &camera_shape,
-        player_position,
+        camera_transform.translation,
         Quat::default(),
         dir3,
         &config,
         &filter
     ) {
-        // Calculate collision distance
-        let hit_distance = hit.distance;
+        // Get percentage to move camera - if collision is very close to camera,
+        // move camera almost all the way to player
+        let wall_distance = hit.distance;
+        let wall_ratio = (wall_distance / distance_to_player).clamp(0.0, 0.9);
 
-        // Adjust distance to prevent camera clipping (subtract a small buffer)
-        let collision_buffer = 0.2;
-        let new_distance = (hit_distance - collision_buffer).max(camera_params.distance * 0.4);
+        // Target is a point that's between current camera and ideal position
+        // This ensures we're always moving toward the correct angle
+        let target_position = ideal_position.lerp(
+            player_position - direction * 1.5, // Minimum safe distance
+            1.0 - wall_ratio
+        );
 
-        // Calculate collision-adjusted camera position
-        target_position = player_position - direction * new_distance;
+        // Apply smooth movement toward this restricted position
+        camera_transform.translation = camera_transform.translation.lerp(
+            target_position,
+            (1.0 - wall_ratio) * time.delta_secs() * 10.0 // Faster adjustments for more severe collisions
+        );
+    } else {
+        // No collision - smoothly return to ideal position
+        camera_transform.translation.smooth_nudge(
+            &ideal_position,
+            camera_params.smoothness,
+            time.delta_secs()
+        );
     }
 
-    // Smoothly move camera to the target position (whether collision-adjusted or ideal)
-    let mut position = camera_transform.translation;
-    // Use a higher smoothness value for collision to reduce jitter
-    let collision_smoothness = camera_params.smoothness * 2.0;
-    position.smooth_nudge(
-        &target_position,
-        collision_smoothness,
-        time.delta_secs()
-    );
-    camera_transform.translation = position;
+    // Always maintain the same focus point - the player position plus small offset
+    let focus_pos = player_position + Vec3::new(0.0, camera_params.height_offset * 0.5, 0.0);
 
     // Make camera look at the focus point
-    let focus_pos = player_position + Vec3::new(0.0, camera_params.height_offset * 0.5, 0.0);
     camera_transform.look_at(focus_pos, Vec3::Y);
 }
 
