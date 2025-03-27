@@ -7,6 +7,7 @@ mod player;
 mod character_controller;
 mod physics;
 mod world;
+mod breakable;
 
 use bevy::prelude::*;
 use bevy::window::{WindowResolution};

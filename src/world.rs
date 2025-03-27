@@ -21,16 +21,16 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-    // A cube to move around
-    commands.spawn((
-        RigidBody::Dynamic,
-        Collider::cuboid(1.0, 1.0, 1.0),
-        Mesh3d(meshes.add(Cuboid::default())),
-        MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
-        Transform::from_xyz(3.0, 2.0, 3.0),
-    ));
-
     // Environment (see the `collider_constructors` example for creating colliders from scenes)
+    commands.spawn((
+        Transform::from_xyz(0.0, 0.0, 0.0),
+        Visibility::default(),
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(10.0, 10.0))),
+        MeshMaterial3d(materials.add(Color::srgb(0.5, 0.5, 1.0))),
+        Collider::cuboid(10.0, 0.1, 10.0),
+        RigidBody::Static,
+    ));
+    /*
     commands.spawn((
         SceneRoot(asset_server.load("character_controller_demo.glb#Scene0")),
         Transform::from_rotation(Quat::from_rotation_y(-core::f32::consts::PI * 0.5)),
@@ -38,7 +38,6 @@ fn setup(
         RigidBody::Static,
     ));
 
-    /*
     // Environment (see the `collider_constructors` example for creating colliders from scenes)
     commands.spawn((
         SceneRoot(asset_server.load("area_0005.glb#Scene0")),

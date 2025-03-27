@@ -137,6 +137,7 @@ fn observe_on_step(
 ) {
     let translation = transforms.get(trigger.entity()).unwrap().translation();
 
+    /*
     commands.spawn((
         Name::new("step_fire"),
         OneShotParticleEffect::new(
@@ -145,6 +146,8 @@ fn observe_on_step(
             1.5
         ),
     ));
+
+     */
 }
 
 fn setup(
