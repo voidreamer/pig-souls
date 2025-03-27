@@ -42,5 +42,6 @@ fn main() {
         .add_plugins(player::PlayerPlugin)
         .add_plugins(camera::CameraPlugin)
         .add_plugins(world::WorldPlugin)
+        .add_plugins(character_controller::CharacterControllerPlugin)
         .run();
 }

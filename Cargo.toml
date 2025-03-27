@@ -11,6 +11,7 @@ bevy_skein = "*"
 
 rand = "0.8.5"
 bevy-inspector-egui = {version = "*"}
+bevy_foliage_tool = "0.15.14"
 
 # Optimizations in debug mode
 [profile.dev]

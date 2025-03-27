@@ -11,18 +11,16 @@
 //!
 //! For a kinematic character controller, see the `kinematic_character_3d` example.
 
-use crate::character_controller;
-use avian3d::{math::*, prelude::*};
+use avian3d::{prelude::*};
 use bevy::prelude::*;
-use character_controller::*;
 use crate::game_states::AppState;
+use crate::character_controller::*;
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins(CharacterControllerPlugin)
             .add_systems(OnEnter(AppState::InGame), setup);
     }
 }
@@ -155,13 +153,7 @@ fn setup(
         MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
         Transform::from_xyz(0.0, 1.5, 0.0),
         Player::default(),
-        CharacterControllerBundle::new(body_collider)
-            .with_movement(
-                30.0,
-                0.92,
-                7.0,
-                (30.0 as Scalar).to_radians(),
-        ),
+        CharacterController::new(body_collider),
         Friction::ZERO.with_combine_rule(CoefficientCombine::Min),
         Restitution::ZERO.with_combine_rule(CoefficientCombine::Min),
         GravityScale(2.0),
