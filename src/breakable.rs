@@ -101,7 +101,7 @@ fn detect_breakable_collisions(
     }
 }
 
-// System to handle breaking props
+// System to handle breaking props with controlled explosion forces
 fn break_props(
     mut commands: Commands,
     mut break_events: EventReader<BreakPropEvent>,
@@ -114,6 +114,16 @@ fn break_props(
             // Despawn the original intact prop
             commands.entity(event.entity).despawn_recursive();
 
+            // Get the original position for better impact point calculation
+            let original_pos = global_transform.translation();
+
+            // If we have a zero impact point, use the original position
+            let impact_point = if event.impact_point == Vec3::ZERO {
+                original_pos
+            } else {
+                event.impact_point
+            };
+
             // Spawn all the broken pieces
             for piece_scene in &breakable.broken_pieces {
                 let piece_entity = commands.spawn((
@@ -125,13 +135,28 @@ fn break_props(
                     BrokenPiece {
                         timer: Timer::new(Duration::from_secs_f32(breakable.despawn_delay), TimerMode::Once),
                     },
-                    // Add a restitution component to make the pieces bounce
-                    Restitution::new(0.4),
+                    // Add a low restitution for less bounce
+                    Restitution::new(0.2),
+                    // Add friction to slow down pieces
+                    Friction::new(0.8),
+                    // Add linear damping to slow down pieces over time
+                    LinearDamping(0.5),
+                    // Add angular damping to reduce spinning
+                    AngularDamping(0.3),
+                    // Set a maximum speed to prevent infinite flight
+                    MaxLinearSpeed(5.0),
                 )).id();
 
-                // Calculate direction from impact point to piece center
-                let piece_pos = global_transform.translation();
-                let direction = (piece_pos - event.impact_point).normalize_or_zero();
+                // Calculate direction from impact point to piece center with a small random offset
+                let offset = Vec3::new(
+                    rng.gen_range(-0.2..0.2),
+                    rng.gen_range(-0.1..0.2),
+                    rng.gen_range(-0.2..0.2),
+                );
+                let piece_pos = original_pos + offset;
+
+                // Direction from impact to piece
+                let direction = (piece_pos - impact_point).normalize_or_zero();
 
                 // If direction is zero (rare case), use a random direction
                 let direction = if direction.length_squared() < 0.001 {
@@ -144,44 +169,49 @@ fn break_props(
                     direction
                 };
 
-                // Create the impulse
+                // Create the impulse with constrained force
                 let mut impulse = ExternalImpulse::default();
 
-                // Base force in the explosion direction
-                let force = direction * breakable.explosion_force;
+                // Cap the explosion force
+                let max_force = 2.0;
+                let base_force = breakable.explosion_force.min(max_force);
 
-                // Add some randomness to the force
+                // Scale force by distance from impact - closer pieces get more force
+                let dist = (piece_pos - impact_point).length();
+                let force_scale = (1.0 - (dist * 0.5).min(0.8)) * base_force;
+
+                // Add some randomness but keep it small
                 let random_force = Vec3::new(
-                    rng.gen_range(-0.5..0.5),
-                    rng.gen_range(0.0..0.5), // Bias upward
-                    rng.gen_range(-0.5..0.5),
-                ) * breakable.explosion_force * 0.5;
+                    rng.gen_range(-0.2..0.2),
+                    rng.gen_range(0.0..0.3), // Bias upward
+                    rng.gen_range(-0.2..0.2),
+                ) * force_scale * 0.3;
 
-                // Apply the linear impulse
-                impulse.apply_impulse(force + random_force);
+                // Apply the linear impulse with a controlled magnitude
+                impulse.apply_impulse(direction * force_scale + random_force);
 
-                // Apply an impulse at a point to create rotation
-                // This will automatically apply the appropriate angular impulse
+                // Apply a small torque impulse for rotation
                 let offset = Vec3::new(
-                    rng.gen_range(-0.1..0.1),
-                    rng.gen_range(-0.1..0.1),
-                    rng.gen_range(-0.1..0.1),
+                    rng.gen_range(-0.05..0.05),
+                    rng.gen_range(-0.05..0.05),
+                    rng.gen_range(-0.05..0.05),
                 );
 
                 impulse.apply_impulse_at_point(
-                    force * 0.2, // Use a smaller force for the point impulse
-                    offset,      // Apply at an offset from center
-                    Vec3::ZERO   // Center of mass reference
+                    Vec3::new(
+                        rng.gen_range(-0.1..0.1),
+                        rng.gen_range(-0.1..0.1),
+                        rng.gen_range(-0.1..0.1),
+                    ) * force_scale * 0.1, // Much smaller rotational force
+                    offset,
+                    Vec3::ZERO
                 );
 
                 commands.entity(piece_entity).insert(impulse);
             }
-
-            // Here you could add particle effects, sounds, etc.
         }
     }
 }
-
 // System to despawn broken pieces after their timer expires
 fn despawn_broken_pieces(
     mut commands: Commands,
@@ -197,7 +227,6 @@ fn despawn_broken_pieces(
     }
 }
 
-// Example usage in your game setup
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -208,19 +237,19 @@ fn setup(
         Transform::from_xyz(-5.0, 1.0, 0.0),
         Collider::capsule(0.5, 0.3), // Approximate vase shape
         RigidBody::Dynamic,
+        // Add a sleeping component to keep it stable until hit
         Breakable {
-            break_threshold: 5.0,
+            break_threshold: 2.0,  // Lower threshold so it breaks more easily
             broken_pieces: vec![
                 asset_server.load("models/vase_piece1.glb#Scene0"),
                 asset_server.load("models/vase_piece2.glb#Scene0"),
                 asset_server.load("models/vase_piece3.glb#Scene0"),
                 asset_server.load("models/vase_piece4.glb#Scene0"),
             ],
-            explosion_force: 3.0,
+            explosion_force: 1.0,  // Lower explosion force (was 3.0)
             despawn_delay: 5.0,
         },
     ));
-
 
     // Spawn a "weapon" or object to hit the vase with
     commands.spawn((
@@ -228,6 +257,6 @@ fn setup(
         Collider::sphere(0.3),
         RigidBody::Dynamic,
         Mass(5.0), // Make it heavy
-        ExternalImpulse::new(Vec3::new(-10.0, 1.0, 0.0)), // Initial impulse toward the vase
+        // Start with no impulse - can add it later or control it manually
     ));
-    }
+}
