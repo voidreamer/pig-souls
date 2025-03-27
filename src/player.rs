@@ -1,16 +1,3 @@
-//! A basic implementation of a character controller for a dynamic rigid body.
-//!
-//! This showcases the following:
-//!
-//! - Basic directional movement and jumping
-//! - Support for both keyboard and gamepad input
-//! - A configurable maximum slope angle for jumping
-//! - Loading a platformer environment from a glTF
-//!
-//! The character controller logic is contained within the `plugin` module.
-//!
-//! For a kinematic character controller, see the `kinematic_character_3d` example.
-
 use avian3d::{prelude::*};
 use bevy::prelude::*;
 use crate::game_states::AppState;
@@ -140,7 +127,6 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-
     let body_collider = Collider::round_cuboid(
         0.2,
         0.1,
@@ -153,7 +139,7 @@ fn setup(
         MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
         Transform::from_xyz(0.0, 1.5, 0.0),
         Player::default(),
-        CharacterController::new(body_collider),
+        CharacterController::new(body_collider), // This should add GroundNormal via required components
         Friction::ZERO.with_combine_rule(CoefficientCombine::Min),
         Restitution::ZERO.with_combine_rule(CoefficientCombine::Min),
         GravityScale(2.0),

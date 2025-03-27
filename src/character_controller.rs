@@ -34,13 +34,20 @@ impl Plugin for CharacterControllerPlugin {
                     // State management
                     states::update_player_states,
 
-                    // Physics systems
                     physics::enhanced_gravity,
                     physics::update_grounded,
                     physics::movement,
                     physics::apply_movement_damping,
                 ).run_if(in_state(AppState::InGame))
                     .chain(),
+            )
+            // Visual tilt in Update schedule for smoother animation
+            .add_systems(
+                FixedUpdate,
+                (
+                    physics::update_character_visual_tilt,
+                    physics::debug_visualize_ground_normals,
+                ).run_if(in_state(AppState::InGame))
             );
     }
 }

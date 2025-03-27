@@ -42,6 +42,23 @@ pub struct MovementDampingFactor(pub Scalar);
 #[derive(Component, Default)]
 pub struct JumpImpulse(pub Scalar);
 
+#[derive(Component, Default)]
+pub struct GroundNormal(pub Vector);
+
+impl GroundNormal {
+    pub fn new() -> Self {
+        Self(Vector::Y)
+    }
+
+    pub fn normal(&self) -> Vector {
+        self.0
+    }
+
+    pub fn set_normal(&mut self, normal: Vector) {
+        self.0 = normal;
+    }
+}
+
 // Helper functions to create a character controller
 
 impl CharacterController {
@@ -55,10 +72,11 @@ impl CharacterController {
         MovementDampingFactor,
         JumpImpulse,
         MaxSlopeAngle,
+        GroundNormal,
     ) {
         // Create shape caster as a slightly smaller version of collider
         let mut caster_shape = collider.clone();
-        caster_shape.set_scale(Vector::ONE * 0.99, 10);
+        caster_shape.set_scale(Vector::ONE * 0.95, 10); // Smaller scale for better detection
 
         (
             CharacterController,
@@ -70,12 +88,14 @@ impl CharacterController {
                 Quaternion::default(),
                 Dir3::NEG_Y,
             )
-                .with_max_distance(0.2),
+                .with_max_distance(0.3)  // Increased distance for better slope detection
+                .with_max_hits(5),        // More hits to find the best contact point
             LockedAxes::ROTATION_LOCKED,
             MovementAcceleration(30.0),
             MovementDampingFactor(0.9),
             JumpImpulse(7.0),
             MaxSlopeAngle((30.0 as Scalar).to_radians()),
+            GroundNormal::new(),
         )
     }
 
@@ -95,10 +115,11 @@ impl CharacterController {
         MovementDampingFactor,
         JumpImpulse,
         MaxSlopeAngle,
+        GroundNormal,
     ) {
         // Create shape caster as a slightly smaller version of collider
         let mut caster_shape = collider.clone();
-        caster_shape.set_scale(Vector::ONE * 0.99, 10);
+        caster_shape.set_scale(Vector::ONE * 0.95, 10);
 
         (
             CharacterController,
@@ -110,12 +131,14 @@ impl CharacterController {
                 Quaternion::default(),
                 Dir3::NEG_Y,
             )
-                .with_max_distance(0.2),
+                .with_max_distance(0.3)
+                .with_max_hits(5),
             LockedAxes::ROTATION_LOCKED,
             MovementAcceleration(acceleration),
             MovementDampingFactor(damping),
             JumpImpulse(jump_impulse),
             MaxSlopeAngle(max_slope_angle),
+            GroundNormal::new(),
         )
     }
 }
