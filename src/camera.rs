@@ -8,6 +8,7 @@ use bevy::{
     window::PrimaryWindow,
     math::StableInterpolate
 };
+use avian3d::prelude::*;
 use crate::game_states::AppState;
 use crate::player::Player;
 
@@ -220,13 +221,77 @@ pub fn third_person_camera(
         camera_transform.look_at(focus_pos, Vec3::Y);
     }
 }
+
+pub fn camera_collision_detection(
+    player_query: Query<(Entity, &Transform), (With<Player>, Without<ThirdPersonCamera>)>,
+    mut camera_query: Query<(&mut Transform, &ThirdPersonCamera), Without<Player>>,
+    spatial_query: SpatialQuery,
+) {
+    // Get player and camera data
+    let Ok((player_entity, player_transform)) = player_query.get_single() else { return };
+    let Ok((mut camera_transform, camera_params)) = camera_query.get_single_mut() else { return };
+
+    // Player position (with a slight vertical offset to match eye level)
+    let player_position = player_transform.translation + Vec3::Y * camera_params.height_offset * 0.5;
+
+    // Current camera position
+    let current_camera_position = camera_transform.translation;
+
+    // Direction from player to camera
+    let direction = (current_camera_position - player_position).normalize();
+    let dir3 = match Dir3::new(direction) {
+        Ok(d) => d,
+        Err(_) => return, // Invalid direction, skip collision check
+    };
+
+    // Create a shape for the camera collision
+    let camera_shape = Collider::sphere(0.3);
+
+    // Create a filter that excludes the player entity
+    let filter = SpatialQueryFilter::default().with_excluded_entities([player_entity]);
+
+    // Configure the shape cast
+    let config = ShapeCastConfig {
+        max_distance: camera_params.distance * 1.2, // Max distance slightly longer than camera distance
+        target_distance: camera_params.distance,    // Preferred distance
+        compute_contact_on_penetration: true,       // Compute contact info when penetrating
+        ignore_origin_penetration: true,            // Ignore if already penetrating at origin
+    };
+
+    // Perform the shape cast
+    if let Some(hit) = spatial_query.cast_shape(
+        &camera_shape,
+        player_position,
+        Quat::default(),
+        dir3,
+        &config,
+        &filter
+    ) {
+        // Calculate collision distance
+        let hit_distance = hit.distance;
+
+        // Adjust distance to prevent camera clipping (subtract a small buffer)
+        let collision_buffer = 0.2;
+        let new_distance = (hit_distance - collision_buffer).max(camera_params.distance * 0.4);
+
+        // Calculate new camera position
+        let new_camera_position = player_position - direction * new_distance;
+
+        // Update camera position
+        camera_transform.translation = new_camera_position;
+    }
+}
+
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(OnEnter(AppState::InGame), spawn_camera)
-            .add_systems(Update, third_person_camera.run_if(in_state(AppState::InGame)))
+            .add_systems(Update, (
+                third_person_camera,
+                camera_collision_detection
+            ).chain().run_if(in_state(AppState::InGame)))
             .add_plugins(TemporalAntiAliasPlugin);
     }
 }
