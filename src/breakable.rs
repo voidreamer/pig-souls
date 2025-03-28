@@ -15,8 +15,10 @@ impl Plugin for BreakablePropsPlugin {
             .register_type::<BrokenPiece>()
             .register_type::<ImpactSettings>()
             .register_type::<ProceduralBreakSettings>()
+            .register_type::<GltfBreakPattern>()
+            .register_type::<FracturePattern>()
             .add_event::<BreakPropEvent>()
-            .add_systems(OnEnter(AppState::InGame), (setup, debug_gltf_nodes))
+            .add_systems(OnEnter(AppState::InGame), setup)
             .add_systems(FixedUpdate, (
                 detect_breakable_collisions,
                 break_props.after(detect_breakable_collisions),
@@ -74,6 +76,7 @@ pub enum ShapeType {
 }
 
 #[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct FracturePattern {
     pub pattern_type: PatternType,
     pub center_bias: f32,       // How much pieces cluster toward center
@@ -98,7 +101,9 @@ pub enum SizeDistribution {
     Random,
 }
 
+/// Component for using GLTF models as break pieces
 #[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct GltfBreakPattern {
     pub source: GltfSource,
     pub transform_strategy: TransformStrategy,
@@ -135,13 +140,6 @@ pub enum TransformStrategy {
     RandomizeRotation,       // Keep positions but randomize rotations
     CenterAndExplode,        // Center all pieces and apply explosion force
     AlignWithImpact,         // Align breaking direction with impact
-}
-
-#[derive(Reflect)]
-pub struct PieceModifications {
-    pub cut_planes: Vec<(Vec3, Vec3)>, // Position and normal for cutting planes
-    pub noise_amount: f32,             // Random noise to add to cuts
-    pub smooth_edges: bool,            // Smooth cut edges
 }
 
 /// Component to control impact and physics settings
@@ -197,27 +195,6 @@ impl Default for BrokenPiece {
             max_distance: 5.0,
         }
     }
-}
-
-// Custom constructors for required components
-fn default_linear_damping() -> LinearDamping {
-    LinearDamping(0.5)
-}
-
-fn default_angular_damping() -> AngularDamping {
-    AngularDamping(0.3)
-}
-
-fn default_restitution() -> Restitution {
-    Restitution::new(0.2)
-}
-
-fn default_friction() -> Friction {
-    Friction::new(0.8)
-}
-
-fn dynamic_rigid_body() -> RigidBody {
-    RigidBody::Dynamic
 }
 
 /// Event to trigger when a prop should break
@@ -308,23 +285,22 @@ fn break_props(
     breakables: Query<(
         Entity,
         &Breakable,
-        &Transform,
         &GlobalTransform,
         Option<&ImpactSettings>,
         Option<&ProceduralBreakSettings>,
-        Option<&GltfBreakPattern>  // Add this to query GLTF break patterns
+        Option<&GltfBreakPattern>
     )>,
-    asset_server: Res<AssetServer>,
-    gltf_assets: Res<Assets<Gltf>>,      // Add this to access GLTF assets
-    gltf_meshes: Res<Assets<GltfMesh>>,  // Add this to access GLTF meshes
-    gltf_nodes: Res<Assets<GltfNode>>,   // Add this to access GLTF nodes
+    _asset_server: Res<AssetServer>,
+    gltf_assets: Res<Assets<Gltf>>,
+    gltf_meshes: Res<Assets<GltfMesh>>,
+    gltf_nodes: Res<Assets<GltfNode>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let mut rng = rand::thread_rng();
 
     for event in break_events.read() {
-        if let Ok((entity, breakable, transform, global_transform, impact_settings, procedual_settings, gltf_pattern)) =
+        if let Ok((entity, breakable, global_transform, impact_settings, procedual_settings, gltf_pattern)) =
             breakables.get(event.entity)
         {
             // Get default settings or use custom ones
@@ -403,7 +379,6 @@ fn break_props(
                 spawn_break_particles(
                     &mut commands,
                     &mut meshes,
-                    &mut materials,
                     impact_point,
                     event.impact_velocity,
                 );
@@ -419,6 +394,7 @@ fn break_props(
         }
     }
 }
+
 /// Helper function to spawn model-based broken pieces
 fn spawn_model_pieces(
     commands: &mut Commands,
@@ -627,14 +603,12 @@ fn apply_explosion_impulse(
 fn spawn_break_particles(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
     position: Vec3,
     velocity: Vec3,
 ) {
     // This is a simplified version - you'd typically use a particle system
     let particle_count = 8;
     let particle_size = 0.05;
-    let particle_color = Color::srgba(0.8, 0.7, 0.6, 0.8);
 
     for _ in 0..particle_count {
         let velocity_direction = velocity.normalize_or_zero();
@@ -699,23 +673,6 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let objects = [
-        // Vases with model pieces
-        (Vec3::new(-5.0, 1.0, 0.0), "vase", true),
-        (Vec3::new(-4.0, 1.0, 1.5), "vase", true),
-        (Vec3::new(-3.0, 1.0, -1.5), "vase", true),
-
-        // Procedural pots
-        (Vec3::new(-2.0, 1.0, -1.0), "pot", false),
-        (Vec3::new(0.0, 1.0, 0.0), "pot", false),
-        (Vec3::new(2.0, 1.0, 2.0), "pot", false),
-
-        // Mix of other breakable objects
-        (Vec3::new(0.0, 1.0, -2.0), "crate", false),
-        (Vec3::new(1.0, 1.0, -1.0), "crate", false),
-        (Vec3::new(3.0, 1.0, -1.0), "barrel", false),
-        (Vec3::new(4.0, 1.0, 1.0), "barrel", false),
-    ];
     // Creating a breakable vase with GLTF node-based pieces
     commands.spawn((
         SceneRoot(asset_server.load("models/intact_vase.glb#Scene0")),
@@ -742,8 +699,60 @@ fn setup(
         ImpactSettings::default(),
     ));
 
+    // Add procedural breakable objects
+    commands.spawn((
+        Mesh3d(meshes.add(Sphere::new(0.4))),
+        MeshMaterial3d(materials.add(Color::srgb(0.8, 0.4, 0.3))),
+        Transform::from_xyz(-2.0, 1.0, -1.0),
+        Collider::sphere(0.4),
+        Breakable {
+            break_threshold: 1.5,
+            broken_pieces: vec![],
+            explosion_force: 0.8,
+            despawn_delay: 4.0,
+        },
+        ProceduralBreakSettings {
+            piece_count: 8,
+            color: Color::srgb(0.8, 0.4, 0.3),
+            size_multiplier: 1.0,
+            shape_distribution: ShapeDistribution::Random,
+            max_size_variation: 0.5,
+            inner_color: None,
+            maintain_proportion: true,
+        },
+        ImpactSettings::default(),
+    ));
 
-
+    // Add a crate with different breaking properties
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.5, 0.5, 0.5))),
+        MeshMaterial3d(materials.add(Color::srgb(0.6, 0.4, 0.2))),
+        Transform::from_xyz(0.0, 1.0, -2.0),
+        Collider::cuboid(0.25, 0.25, 0.25),
+        Breakable {
+            break_threshold: 2.5,
+            broken_pieces: vec![],
+            explosion_force: 1.2,
+            despawn_delay: 5.0,
+        },
+        ProceduralBreakSettings {
+            piece_count: 12,
+            color: Color::srgb(0.6, 0.4, 0.2),
+            size_multiplier: 0.8,
+            shape_distribution: ShapeDistribution::Only(ShapeType::Cube),
+            max_size_variation: 0.3,
+            inner_color: Some(Color::srgb(0.5, 0.3, 0.1)),
+            maintain_proportion: true,
+        },
+        ImpactSettings {
+            max_scatter_distance: 6.0,
+            piece_restitution: 0.1,
+            piece_friction: 0.9,
+            piece_linear_damping: 0.6,
+            piece_angular_damping: 0.4,
+            ..default()
+        },
+    ));
 }
 /// Helper function to spawn pieces from GLTF nodes
 fn spawn_gltf_pieces(
@@ -838,8 +847,8 @@ fn spawn_gltf_pieces(
                                     AngularDamping(impact.piece_angular_damping),
                                     Restitution::new(impact.piece_restitution),
                                     Friction::new(impact.piece_friction),
-                                    // Use a collider that better matches the piece shape
-                                    create_collider_for_mesh(&mesh.primitives[0].mesh),
+                                    // Use a simple collider
+                                    Collider::cuboid(0.15, 0.15, 0.15),
                                     MaxLinearSpeed(5.0),
                                 )).id();
 
@@ -859,9 +868,8 @@ fn spawn_gltf_pieces(
                 }
             }
         },
-        GltfSource::Meshes { handles } => {
-            // Similar implementation for direct mesh handles
-            // ...
+        GltfSource::Meshes { handles: _ } => {
+            // Implementation for direct mesh handles could be added here if needed
         }
     }
 }
@@ -947,30 +955,5 @@ fn calculate_piece_transform(
             let additional_rotation = Quat::from_rotation_arc(Vec3::Y, direction);
             (original_pos + offset, base_rotation * additional_rotation)
         }
-    }
-}
-
-/// Helper function to create an appropriate collider for a mesh
-fn create_collider_for_mesh(mesh: &Handle<Mesh>) -> Collider {
-    // In a real implementation, you'd analyze the mesh and create a proper collider
-    // For simplicity, we'll just use a cuboid collider here
-    Collider::cuboid(0.2, 0.2, 0.2)
-
-    // In a more advanced implementation, you could:
-    // 1. Use Collider::trimesh_from_bevy_mesh(mesh)
-    // 2. Calculate an approximate convex hull
-    // 3. Use primitive shapes that best fit the mesh
-}
-// Add this function and call it from your setup function
-fn debug_gltf_nodes(gltf_assets: Res<Assets<Gltf>>, asset_server: Res<AssetServer>) {
-    let handle = asset_server.load("models/broken_vase.glb");
-
-    if let Some(gltf) = gltf_assets.get(&handle) {
-        println!("GLTF loaded! Found {} named nodes:", gltf.named_nodes.len());
-        for (name, _) in &gltf.named_nodes {
-            println!("  Node name: {}", name);
-        }
-    } else {
-        println!("GLTF not loaded yet or failed to load");
     }
 }
