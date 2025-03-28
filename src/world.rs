@@ -25,9 +25,9 @@ fn setup(
     commands.spawn((
         Transform::from_xyz(0.0, 0.0, 0.0),
         Visibility::default(),
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(10.0, 10.0))),
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(50.0, 50.0))),
         MeshMaterial3d(materials.add(Color::srgb(0.5, 0.5, 1.0))),
-        Collider::cuboid(10.0, 0.1, 10.0),
+        Collider::cuboid(50.0, 0.1, 50.0),
         RigidBody::Static,
     ));
     /*

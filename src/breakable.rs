@@ -4,62 +4,147 @@ use std::time::Duration;
 use rand::Rng;
 use crate::game_states::AppState;
 
-// Plugin to handle all the breakable prop functionality
+/// Plugin to handle all breakable prop functionality in the game
 pub struct BreakablePropsPlugin;
 
 impl Plugin for BreakablePropsPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<Breakable>()
             .register_type::<BrokenPiece>()
+            .register_type::<ImpactSettings>()
+            .register_type::<ProcedualBreakSettings>()
             .add_event::<BreakPropEvent>()
             .add_systems(OnEnter(AppState::InGame), setup)
             .add_systems(FixedUpdate, (
                 detect_breakable_collisions,
-                break_props,
+                break_props.after(detect_breakable_collisions),
                 despawn_broken_pieces,
             ).run_if(in_state(AppState::InGame)));
     }
 }
 
-// Component to mark entities as breakable
+/// Primary component to mark entities as breakable
 #[derive(Component, Reflect, Default)]
 #[reflect(Component)]
-pub struct Breakable {
-    // Minimum impulse required to break the prop
+#[require(RigidBody)] // All breakable objects must be rigid bodies
+struct Breakable {
+    /// Minimum impulse required to break the prop
     pub break_threshold: f32,
-    // Handles to the broken pieces' scene or mesh
+    /// Handles to the broken pieces' scene or mesh
     pub broken_pieces: Vec<Handle<Scene>>,
-    // Initial impulse to apply to the pieces when broken
+    /// Initial impulse to apply to the pieces when broken
     pub explosion_force: f32,
-    // How long the pieces should exist before despawning
+    /// How long the pieces should exist before despawning
     pub despawn_delay: f32,
 }
 
-// Component to mark and track broken pieces
+/// Component to control procedural breaking settings
 #[derive(Component, Reflect, Default)]
 #[reflect(Component)]
-pub struct BrokenPiece {
-    pub timer: Timer,
+struct ProcedualBreakSettings {
+    /// Number of procedural pieces to generate
+    pub piece_count: u32,
+    /// Base color for procedural pieces
+    pub color: Color,
+    /// Size multiplier for pieces
+    pub size_multiplier: f32,
 }
 
-// Event to trigger when a prop should break
+/// Component to control impact and physics settings
+#[derive(Component, Reflect, Clone)]
+#[reflect(Component)]
+#[require(Sleeping)] // Objects with impact settings start in sleeping state
+struct ImpactSettings {
+    /// Maximum distance pieces can travel before despawning
+    pub max_scatter_distance: f32,
+    /// Whether to play impact sound when broken
+    pub play_sound: bool,
+    /// Whether to spawn particles when broken
+    pub spawn_particles: bool,
+    /// Restitution value for broken pieces
+    pub piece_restitution: f32,
+    /// Friction value for broken pieces
+    pub piece_friction: f32,
+    /// Linear damping for pieces
+    pub piece_linear_damping: f32,
+    /// Angular damping for pieces
+    pub piece_angular_damping: f32,
+}
+
+impl Default for ImpactSettings {
+    fn default() -> Self {
+        Self {
+            max_scatter_distance: 5.0,
+            play_sound: true,
+            spawn_particles: true,
+            piece_restitution: 0.2,
+            piece_friction: 0.8,
+            piece_linear_damping: 0.5,
+            piece_angular_damping: 0.3,
+        }
+    }
+}
+
+/// Component to mark and track broken pieces
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+#[require(LinearDamping, AngularDamping, Restitution, Friction, RigidBody)] // Pieces always have physics components
+struct BrokenPiece {
+    pub timer: Timer,
+    pub original_position: Vec3,
+    pub max_distance: f32,
+}
+
+impl Default for BrokenPiece {
+    fn default() -> Self {
+        Self {
+            timer: Timer::new(Duration::from_secs_f32(5.0), TimerMode::Once),
+            original_position: Vec3::ZERO,
+            max_distance: 5.0,
+        }
+    }
+}
+
+// Custom constructors for required components
+fn default_linear_damping() -> LinearDamping {
+    LinearDamping(0.5)
+}
+
+fn default_angular_damping() -> AngularDamping {
+    AngularDamping(0.3)
+}
+
+fn default_restitution() -> Restitution {
+    Restitution::new(0.2)
+}
+
+fn default_friction() -> Friction {
+    Friction::new(0.8)
+}
+
+fn dynamic_rigid_body() -> RigidBody {
+    RigidBody::Dynamic
+}
+
+/// Event to trigger when a prop should break
 #[derive(Event)]
 pub struct BreakPropEvent {
     pub entity: Entity,
     pub impact_point: Vec3,
     pub impact_force: f32,
+    pub impact_velocity: Vec3,
 }
 
-// System to detect collisions with breakable props
+/// System to detect collisions with breakable props
 fn detect_breakable_collisions(
     mut collision_events: EventReader<Collision>,
     mut break_events: EventWriter<BreakPropEvent>,
     breakables: Query<&Breakable>,
+    transforms: Query<&GlobalTransform>,
     rigid_bodies: Query<&RigidBody>,
+    velocities: Query<&LinearVelocity>,
 ) {
     for collision in collision_events.read() {
-        // Assuming Collision is a wrapper around a Contacts struct
-        // Extract the contacts from the collision
         let contacts = &collision.0;
 
         // Check if either entity is breakable
@@ -81,182 +166,609 @@ fn detect_breakable_collisions(
             }
         }
 
-        // Estimate impact force - this is simplified
-        // In a real game, you would extract this from the physics data more accurately
-        let impact_force = 10.0; // Placeholder - you'd calculate this from the contacts
-
-        // Get a reasonable impact point
-        // For now, we'll just use the position of the other entity as the impact point
-        // In a real scenario, you'd want to get this from the contact data
-        let impact_point = Vec3::ZERO; // Placeholder
+        // Calculate impact force based on velocity of the other entity
+        let impact_force = if let Ok(vel) = velocities.get(other_entity) {
+            vel.0.length() * 2.0 // Scale factor to convert velocity to approximate force
+        } else {
+            3.0 // Default force if velocity isn't available
+        };
 
         // Only break if force exceeds threshold
-        if impact_force >= breakable.break_threshold {
-            break_events.send(BreakPropEvent {
-                entity: breakable_entity,
-                impact_point,
-                impact_force,
-            });
+        if impact_force < breakable.break_threshold {
+            continue;
         }
+
+        // Get impact velocity for effect scaling
+        let impact_velocity = velocities.get(other_entity)
+            .map(|vel| vel.0)
+            .unwrap_or(Vec3::ZERO);
+
+        // Get impact point from transforms
+        let impact_point = if let (Ok(transform1), Ok(transform2)) = (
+            transforms.get(contacts.entity1),
+            transforms.get(contacts.entity2)
+        ) {
+            // Use midpoint between entities as approximate impact point
+            (transform1.translation() + transform2.translation()) * 0.5
+        } else if let Ok(transform) = transforms.get(breakable_entity) {
+            // Fallback to breakable object's position
+            transform.translation()
+        } else {
+            Vec3::ZERO
+        };
+
+        // Send break event
+        break_events.send(BreakPropEvent {
+            entity: breakable_entity,
+            impact_point,
+            impact_force,
+            impact_velocity,
+        });
     }
 }
 
-// System to handle breaking props with controlled explosion forces
+/// System to handle breaking props with improved physics and effects
 fn break_props(
     mut commands: Commands,
     mut break_events: EventReader<BreakPropEvent>,
-    breakables: Query<(&Breakable, &Transform, &GlobalTransform)>,
+    breakables: Query<(
+        Entity,
+        &Breakable,
+        &Transform,
+        &GlobalTransform,
+        Option<&ImpactSettings>,
+        Option<&ProcedualBreakSettings>
+    )>,
+    asset_server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let mut rng = rand::thread_rng();
 
     for event in break_events.read() {
-        if let Ok((breakable, transform, global_transform)) = breakables.get(event.entity) {
-            // Despawn the original intact prop
-            commands.entity(event.entity).despawn_recursive();
+        if let Ok((entity, breakable, transform, global_transform, impact_settings, procedual_settings)) =
+            breakables.get(event.entity)
+        {
+            // Get default settings or use custom ones
+            let impact = impact_settings.cloned().unwrap_or_default();
 
-            // Get the original position for better impact point calculation
+            // Despawn the original intact prop
+            commands.entity(entity).despawn_recursive();
+
+            // Get the original position
             let original_pos = global_transform.translation();
 
-            // If we have a zero impact point, use the original position
+            // If we have a valid impact point, use it, otherwise use the original position
             let impact_point = if event.impact_point == Vec3::ZERO {
                 original_pos
             } else {
                 event.impact_point
             };
 
-            // Spawn all the broken pieces
-            for piece_scene in &breakable.broken_pieces {
-                let piece_entity = commands.spawn((
-                    SceneRoot(piece_scene.clone()),
-                    Transform::from_matrix(global_transform.compute_matrix()),
-                    RigidBody::Dynamic,
-                    // Add a simple collider - ideally this would match the piece geometry
-                    Collider::cuboid(0.2, 0.2, 0.2), // Placeholder size
-                    BrokenPiece {
-                        timer: Timer::new(Duration::from_secs_f32(breakable.despawn_delay), TimerMode::Once),
-                    },
-                    // Add a low restitution for less bounce
-                    Restitution::new(0.2),
-                    // Add friction to slow down pieces
-                    Friction::new(0.8),
-                    // Add linear damping to slow down pieces over time
-                    LinearDamping(0.5),
-                    // Add angular damping to reduce spinning
-                    AngularDamping(0.3),
-                    // Set a maximum speed to prevent infinite flight
-                    MaxLinearSpeed(5.0),
-                )).id();
-
-                // Calculate direction from impact point to piece center with a small random offset
-                let offset = Vec3::new(
-                    rng.gen_range(-0.2..0.2),
-                    rng.gen_range(-0.1..0.2),
-                    rng.gen_range(-0.2..0.2),
+            // Check if we have model pieces to spawn
+            if !breakable.broken_pieces.is_empty() {
+                spawn_model_pieces(
+                    &mut commands,
+                    &breakable.broken_pieces,
+                    breakable,
+                    global_transform,
+                    impact_point,
+                    event.impact_force,
+                    &impact,
+                    &mut rng,
                 );
-                let piece_pos = original_pos + offset;
+            }
 
-                // Direction from impact to piece
-                let direction = (piece_pos - impact_point).normalize_or_zero();
+            // If we need procedural pieces
+            if let Some(proc_settings) = procedual_settings {
+                if proc_settings.piece_count > 0 {
+                    let piece_material = materials.add(StandardMaterial {
+                        base_color: proc_settings.color,
+                        perceptual_roughness: 0.8,
+                        ..default()
+                    });
 
-                // If direction is zero (rare case), use a random direction
-                let direction = if direction.length_squared() < 0.001 {
-                    Vec3::new(
-                        rng.gen_range(-1.0..1.0),
-                        rng.gen_range(0.1..1.0), // Bias upward
-                        rng.gen_range(-1.0..1.0),
-                    ).normalize()
-                } else {
-                    direction
-                };
+                    spawn_procedural_pieces(
+                        &mut commands,
+                        &mut meshes,
+                        piece_material,
+                        proc_settings.piece_count,
+                        proc_settings.size_multiplier,
+                        breakable,
+                        global_transform,
+                        impact_point,
+                        event.impact_force,
+                        &impact,
+                        &mut rng,
+                    );
+                }
+            }
 
-                // Create the impulse with constrained force
-                let mut impulse = ExternalImpulse::default();
-
-                // Cap the explosion force
-                let max_force = 2.0;
-                let base_force = breakable.explosion_force.min(max_force);
-
-                // Scale force by distance from impact - closer pieces get more force
-                let dist = (piece_pos - impact_point).length();
-                let force_scale = (1.0 - (dist * 0.5).min(0.8)) * base_force;
-
-                // Add some randomness but keep it small
-                let random_force = Vec3::new(
-                    rng.gen_range(-0.2..0.2),
-                    rng.gen_range(0.0..0.3), // Bias upward
-                    rng.gen_range(-0.2..0.2),
-                ) * force_scale * 0.3;
-
-                // Apply the linear impulse with a controlled magnitude
-                impulse.apply_impulse(direction * force_scale + random_force);
-
-                // Apply a small torque impulse for rotation
-                let offset = Vec3::new(
-                    rng.gen_range(-0.05..0.05),
-                    rng.gen_range(-0.05..0.05),
-                    rng.gen_range(-0.05..0.05),
+            // Optional: Spawn particles at impact point
+            if impact.spawn_particles {
+                spawn_break_particles(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    impact_point,
+                    event.impact_velocity,
                 );
+            }
 
-                impulse.apply_impulse_at_point(
-                    Vec3::new(
-                        rng.gen_range(-0.1..0.1),
-                        rng.gen_range(-0.1..0.1),
-                        rng.gen_range(-0.1..0.1),
-                    ) * force_scale * 0.1, // Much smaller rotational force
-                    offset,
-                    Vec3::ZERO
-                );
-
-                commands.entity(piece_entity).insert(impulse);
+            // Optional: Play break sound
+            if impact.play_sound {
+                // Uncomment when you have audio assets
+                /*
+                commands.spawn(AudioPlayer(asset_server.load("sounds/break.ogg")));
+                */
             }
         }
     }
 }
-// System to despawn broken pieces after their timer expires
+
+/// Helper function to spawn model-based broken pieces
+fn spawn_model_pieces(
+    commands: &mut Commands,
+    pieces: &[Handle<Scene>],
+    breakable: &Breakable,
+    global_transform: &GlobalTransform,
+    impact_point: Vec3,
+    impact_force: f32,
+    impact: &ImpactSettings,
+    rng: &mut impl Rng,
+) {
+    let original_pos = global_transform.translation();
+
+    for piece_scene in pieces {
+        // Small random offset to prevent pieces from spawning at the exact same spot
+        let offset = Vec3::new(
+            rng.gen_range(-0.1..0.1),
+            rng.gen_range(-0.05..0.1),
+            rng.gen_range(-0.1..0.1),
+        );
+
+        let piece_pos = original_pos + offset;
+
+        // Spawn the piece - we use required components for the physics properties!
+        let piece_entity = commands.spawn((
+            SceneRoot(piece_scene.clone()),
+            Transform::from_matrix(global_transform.compute_matrix())
+                .with_translation(piece_pos),
+            // Required components will handle physics setup
+            BrokenPiece {
+                timer: Timer::new(Duration::from_secs_f32(breakable.despawn_delay), TimerMode::Once),
+                original_position: original_pos,
+                max_distance: impact.max_scatter_distance,
+            },
+            // These will override the defaults from BrokenPiece's required components
+            LinearDamping(impact.piece_linear_damping),
+            AngularDamping(impact.piece_angular_damping),
+            Restitution::new(impact.piece_restitution),
+            Friction::new(impact.piece_friction),
+            // Add a simple collider
+            Collider::cuboid(0.2, 0.2, 0.2),
+            MaxLinearSpeed(5.0),
+        )).id();
+
+        apply_explosion_impulse(
+            commands,
+            piece_entity,
+            piece_pos,
+            impact_point,
+            breakable.explosion_force,
+            impact_force,
+            rng,
+        );
+    }
+}
+
+/// Helper function to spawn procedurally generated broken pieces
+fn spawn_procedural_pieces(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    material: Handle<StandardMaterial>,
+    count: u32,
+    size_multiplier: f32,
+    breakable: &Breakable,
+    global_transform: &GlobalTransform,
+    impact_point: Vec3,
+    impact_force: f32,
+    impact: &ImpactSettings,
+    rng: &mut impl Rng,
+) {
+    let original_pos = global_transform.translation();
+    let scale = global_transform.scale();
+    let avg_scale = (scale.x + scale.y + scale.z) / 3.0 * size_multiplier;
+
+    for _ in 0..count {
+        // Random offset based on original object scale
+        let offset = Vec3::new(
+            rng.gen_range(-0.2..0.2) * avg_scale,
+            rng.gen_range(-0.1..0.3) * avg_scale,
+            rng.gen_range(-0.2..0.2) * avg_scale,
+        );
+
+        let piece_pos = original_pos + offset;
+
+        // Random size for piece
+        let size = Vec3::new(
+            rng.gen_range(0.05..0.15) * avg_scale,
+            rng.gen_range(0.05..0.15) * avg_scale,
+            rng.gen_range(0.05..0.15) * avg_scale,
+        );
+
+        // Create mesh based on random shape type
+        let mesh = match rng.gen_range(0..3) {
+            0 => meshes.add(Cuboid::new(size.x, size.y, size.z)),
+            1 => meshes.add(Sphere::new(size.x.min(size.y).min(size.z))),
+            _ => meshes.add(Cylinder::new(size.y, size.x.min(size.z))),
+        };
+
+        // Random rotation for variety
+        let rotation = Quat::from_euler(
+            EulerRot::XYZ,
+            rng.gen_range(-std::f32::consts::PI..std::f32::consts::PI),
+            rng.gen_range(-std::f32::consts::PI..std::f32::consts::PI),
+            rng.gen_range(-std::f32::consts::PI..std::f32::consts::PI),
+        );
+
+        // Spawn the piece using required components
+        let piece_entity = commands.spawn((
+            Transform::from_translation(piece_pos).with_rotation(rotation),
+            Mesh3d(mesh),
+            MeshMaterial3d(material.clone()),
+            // BrokenPiece requires RigidBody, LinearDamping, AngularDamping, etc.
+            BrokenPiece {
+                timer: Timer::new(Duration::from_secs_f32(breakable.despawn_delay), TimerMode::Once),
+                original_position: original_pos,
+                max_distance: impact.max_scatter_distance,
+            },
+            // These will override the defaults from BrokenPiece
+            LinearDamping(impact.piece_linear_damping),
+            AngularDamping(impact.piece_angular_damping),
+            Restitution::new(impact.piece_restitution),
+            Friction::new(impact.piece_friction),
+            Collider::cuboid(size.x, size.y, size.z),
+            MaxLinearSpeed(5.0),
+        )).id();
+
+        apply_explosion_impulse(
+            commands,
+            piece_entity,
+            piece_pos,
+            impact_point,
+            breakable.explosion_force * 0.6, // Less force for procedural pieces
+            impact_force,
+            rng,
+        );
+    }
+}
+
+/// Helper function to apply controlled explosion impulse to pieces
+fn apply_explosion_impulse(
+    commands: &mut Commands,
+    entity: Entity,
+    piece_pos: Vec3,
+    impact_point: Vec3,
+    explosion_force: f32,
+    impact_force: f32,
+    rng: &mut impl Rng,
+) {
+    // Direction from impact to piece
+    let direction = (piece_pos - impact_point).normalize_or_zero();
+
+    // If direction is zero, use a random direction
+    let direction = if direction.length_squared() < 0.001 {
+        Vec3::new(
+            rng.gen_range(-1.0..1.0),
+            rng.gen_range(0.1..1.0), // Bias upward
+            rng.gen_range(-1.0..1.0),
+        ).normalize()
+    } else {
+        direction
+    };
+
+    let mut impulse = ExternalImpulse::default();
+
+    // Calculate distance-based scaling
+    let dist = (piece_pos - impact_point).length();
+
+    // Hard cap on maximum force
+    let max_force = 2.0;
+    // Scale by impact force but keep within max bounds
+    let adjusted_force = ((explosion_force * (impact_force / 10.0).min(1.5))).min(max_force);
+    // Apply distance falloff
+    let base_force = adjusted_force * (1.0 - (dist * 0.5).min(0.8));
+
+    // Randomized but controlled force
+    let random_force = Vec3::new(
+        rng.gen_range(-0.15..0.15),
+        rng.gen_range(0.0..0.2),  // Upward bias
+        rng.gen_range(-0.15..0.15),
+    ) * base_force * 0.3;
+
+    // Apply the main impulse
+    impulse.apply_impulse(direction * base_force + random_force);
+
+    // Apply a small torque impulse for rotation
+    let offset = Vec3::new(
+        rng.gen_range(-0.05..0.05),
+        rng.gen_range(-0.05..0.05),
+        rng.gen_range(-0.05..0.05),
+    );
+
+    impulse.apply_impulse_at_point(
+        Vec3::new(
+            rng.gen_range(-0.1..0.1),
+            rng.gen_range(-0.1..0.1),
+            rng.gen_range(-0.1..0.1),
+        ) * base_force * 0.1,
+        offset,
+        Vec3::ZERO
+    );
+
+    commands.entity(entity).insert(impulse);
+}
+
+/// Helper function to spawn particles at the break point
+fn spawn_break_particles(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    position: Vec3,
+    velocity: Vec3,
+) {
+    // This is a simplified version - you'd typically use a particle system
+    let particle_count = 8;
+    let particle_size = 0.05;
+    let particle_color = Color::rgba(0.8, 0.7, 0.6, 0.8);
+
+    for _ in 0..particle_count {
+        let velocity_direction = velocity.normalize_or_zero();
+        let mut rng = rand::thread_rng();
+
+        // Random direction biased toward the impact velocity
+        let random_dir = Vec3::new(
+            rng.gen_range(-1.0..1.0),
+            rng.gen_range(0.0..1.0),
+            rng.gen_range(-1.0..1.0),
+        ).normalize();
+
+        let direction = if velocity_direction.length_squared() > 0.001 {
+            (velocity_direction + random_dir * 0.5).normalize()
+        } else {
+            random_dir
+        };
+
+        // Spawn a small particle with physics
+        commands.spawn((
+            Transform::from_translation(position),
+            Mesh3d(meshes.add(Sphere::new(particle_size * rng.gen_range(0.5..1.0)))),
+            // BrokenPiece requires all the physics components
+            BrokenPiece {
+                timer: Timer::new(Duration::from_secs_f32(1.5), TimerMode::Once),
+                original_position: position,
+                max_distance: 10.0,
+            },
+            // Override with particle-specific settings
+            LinearDamping(0.8),
+            Collider::sphere(particle_size * 0.5),
+            ExternalImpulse::new(direction * rng.gen_range(0.5..1.5)),
+        ));
+    }
+}
+
+/// System to despawn broken pieces after their timer expires or if they travel too far
 fn despawn_broken_pieces(
     mut commands: Commands,
-    mut pieces: Query<(Entity, &mut BrokenPiece)>,
+    mut pieces: Query<(Entity, &mut BrokenPiece, &GlobalTransform)>,
     time: Res<Time>,
 ) {
-    for (entity, mut piece) in &mut pieces {
+    for (entity, mut piece, transform) in &mut pieces {
         piece.timer.tick(time.delta());
 
-        if piece.timer.finished() {
-            commands.entity(entity).despawn_recursive();
+        // Calculate distance from original position
+        let distance_from_origin = (transform.translation() - piece.original_position).length();
+
+        // Despawn if timer finished or if piece traveled too far
+        if piece.timer.finished() || distance_from_origin > piece.max_distance {
+            if commands.get_entity(entity).is_some() {
+                commands.entity(entity).despawn_recursive();
+            }
         }
     }
 }
 
+/// Example usage in game setup
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Spawn a breakable vase
+    let objects = [
+        // Vases with model pieces
+        (Vec3::new(-5.0, 1.0, 0.0), "vase", true),
+        (Vec3::new(-4.0, 1.0, 1.5), "vase", true),
+        (Vec3::new(-3.0, 1.0, -1.5), "vase", true),
+
+        // Procedural pots
+        (Vec3::new(-2.0, 1.0, -1.0), "pot", false),
+        (Vec3::new(0.0, 1.0, 0.0), "pot", false),
+        (Vec3::new(2.0, 1.0, 2.0), "pot", false),
+
+        // Mix of other breakable objects
+        (Vec3::new(0.0, 1.0, -2.0), "crate", false),
+        (Vec3::new(1.0, 1.0, -1.0), "crate", false),
+        (Vec3::new(3.0, 1.0, -1.0), "barrel", false),
+        (Vec3::new(4.0, 1.0, 1.0), "barrel", false),
+    ];
+
+    // Create materials for different object types
+    let pot_material = materials.add(Color::rgb(0.8, 0.5, 0.3));
+    let crate_material = materials.add(Color::rgb(0.6, 0.4, 0.2));
+    let barrel_material = materials.add(Color::rgb(0.5, 0.3, 0.1));
+
+    // Spawn all objects
+    for (position, object_type, use_models) in objects.iter() {
+        match *object_type {
+            "vase" => {
+                commands.spawn((
+                    SceneRoot(asset_server.load("models/vase.glb#Scene0")),
+                    Transform::from_translation(*position),
+                    Collider::capsule(0.5, 0.3),
+                    Breakable {
+                        break_threshold: 2.0,
+                        broken_pieces: if *use_models {
+                            vec![
+                                asset_server.load("models/vase_piece1.glb#Scene0"),
+                                asset_server.load("models/vase_piece2.glb#Scene0"),
+                                asset_server.load("models/vase_piece3.glb#Scene0"),
+                                asset_server.load("models/vase_piece4.glb#Scene0"),
+                            ]
+                        } else {
+                            vec![]
+                        },
+                        explosion_force: 1.0,
+                        despawn_delay: 5.0,
+                    },
+                    ProcedualBreakSettings {
+                        piece_count: if *use_models { 0 } else { 8 },
+                        color: Color::rgb(0.7, 0.4, 0.3),
+                        size_multiplier: 1.0,
+                    },
+                    ImpactSettings {
+                        max_scatter_distance: 5.0,
+                        play_sound: true,
+                        spawn_particles: true,
+                        piece_restitution: 0.2,
+                        piece_friction: 0.8,
+                        piece_linear_damping: 0.5,
+                        piece_angular_damping: 0.3,
+                    },
+                ));
+            },
+            "pot" => {
+                commands.spawn((
+                    Mesh3d(meshes.add(Cylinder::new(0.5, 0.4))),
+                    MeshMaterial3d(pot_material.clone()),
+                    Transform::from_translation(*position),
+                    Collider::cylinder(0.5, 0.4),
+                    Breakable {
+                        break_threshold: 1.5,
+                        broken_pieces: vec![],
+                        explosion_force: 0.8,
+                        despawn_delay: 4.0,
+                    },
+                    ProcedualBreakSettings {
+                        piece_count: 8,
+                        color: Color::rgb(0.8, 0.5, 0.3),
+                        size_multiplier: 1.0,
+                    },
+                    ImpactSettings::default(),
+                ));
+            },
+            "crate" => {
+                commands.spawn((
+                    Mesh3d(meshes.add(Cuboid::new(0.5, 0.5, 0.5))),
+                    MeshMaterial3d(crate_material.clone()),
+                    Transform::from_translation(*position),
+                    Collider::cuboid(0.25, 0.25, 0.25),
+                    Breakable {
+                        break_threshold: 2.5,
+                        broken_pieces: vec![],
+                        explosion_force: 1.2,
+                        despawn_delay: 5.0,
+                    },
+                    ProcedualBreakSettings {
+                        piece_count: 12,
+                        color: Color::rgb(0.6, 0.4, 0.2),
+                        size_multiplier: 0.8,
+                    },
+                    ImpactSettings {
+                        max_scatter_distance: 6.0,
+                        play_sound: true,
+                        spawn_particles: true,
+                        piece_restitution: 0.1,
+                        piece_friction: 0.9,
+                        piece_linear_damping: 0.6,
+                        piece_angular_damping: 0.4,
+                    },
+                ));
+            },
+            "barrel" => {
+                commands.spawn((
+                    Mesh3d(meshes.add(Cylinder::new(0.6, 0.4))),
+                    MeshMaterial3d(barrel_material.clone()),
+                    Transform::from_translation(*position),
+                    Collider::cylinder(0.6, 0.4),
+                    Breakable {
+                        break_threshold: 3.0,
+                        broken_pieces: vec![],
+                        explosion_force: 1.5,
+                        despawn_delay: 6.0,
+                    },
+                    ProcedualBreakSettings {
+                        piece_count: 10,
+                        color: Color::rgb(0.5, 0.3, 0.1),
+                        size_multiplier: 1.2,
+                    },
+                    ImpactSettings {
+                        max_scatter_distance: 7.0,
+                        play_sound: true,
+                        spawn_particles: true,
+                        piece_restitution: 0.15,
+                        piece_friction: 0.85,
+                        piece_linear_damping: 0.4,
+                        piece_angular_damping: 0.3,
+                    },
+                ));
+            },
+            _ => {}
+        }
+    }
+
+    // Spawn a wrecking sphere for testing
     commands.spawn((
-        SceneRoot(asset_server.load("models/vase.glb#Scene0")),
-        Transform::from_xyz(-5.0, 1.0, 0.0),
-        Collider::capsule(0.5, 0.3), // Approximate vase shape
+        Mesh3d(meshes.add(Sphere::new(0.5))),
+        Transform::from_xyz(5.0, 1.0, 0.0),
+        Collider::sphere(0.5),
         RigidBody::Dynamic,
-        // Add a sleeping component to keep it stable until hit
-        Breakable {
-            break_threshold: 2.0,  // Lower threshold so it breaks more easily
-            broken_pieces: vec![
-                asset_server.load("models/vase_piece1.glb#Scene0"),
-                asset_server.load("models/vase_piece2.glb#Scene0"),
-                asset_server.load("models/vase_piece3.glb#Scene0"),
-                asset_server.load("models/vase_piece4.glb#Scene0"),
-            ],
-            explosion_force: 1.0,  // Lower explosion force (was 3.0)
-            despawn_delay: 5.0,
-        },
+        Mass(10.0),
+        ExternalImpulse::new(Vec3::new(-5.0, 0.5, 0.0)),
     ));
 
-    // Spawn a "weapon" or object to hit the vase with
+    // Add some walls to keep things contained
     commands.spawn((
-        Transform::from_xyz(3.0, 1.0, 0.0),
-        Collider::sphere(0.3),
-        RigidBody::Dynamic,
-        Mass(5.0), // Make it heavy
-        // Start with no impulse - can add it later or control it manually
+        Mesh3d(meshes.add(Cuboid::new(0.5, 1.0, 20.0))),
+        MeshMaterial3d(materials.add(Color::rgba(0.5, 0.5, 0.5, 0.5))),
+        Transform::from_xyz(-10.0, 0.5, 0.0),
+        Collider::cuboid(0.25, 0.5, 10.0),
+        RigidBody::Static,
     ));
+
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.5, 1.0, 20.0))),
+        MeshMaterial3d(materials.add(Color::rgba(0.5, 0.5, 0.5, 0.5))),
+        Transform::from_xyz(10.0, 0.5, 0.0),
+        Collider::cuboid(0.25, 0.5, 10.0),
+        RigidBody::Static,
+    ));
+
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(20.0, 1.0, 0.5))),
+        MeshMaterial3d(materials.add(Color::rgba(0.5, 0.5, 0.5, 0.5))),
+        Transform::from_xyz(0.0, 0.5, -10.0),
+        Collider::cuboid(10.0, 0.5, 0.25),
+        RigidBody::Static,
+    ));
+
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(20.0, 1.0, 0.5))),
+        MeshMaterial3d(materials.add(Color::rgba(0.5, 0.5, 0.5, 0.5))),
+        Transform::from_xyz(0.0, 0.5, 10.0),
+        Collider::cuboid(10.0, 0.5, 0.25),
+        RigidBody::Static,
+    ));
+
 }
