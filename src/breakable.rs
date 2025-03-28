@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use avian3d::prelude::*;
 use std::time::Duration;
+use bevy::gltf::{GltfMesh, GltfNode};
+use rand::prelude::IteratorRandom;
 use rand::Rng;
 use crate::game_states::AppState;
 
@@ -12,9 +14,9 @@ impl Plugin for BreakablePropsPlugin {
         app.register_type::<Breakable>()
             .register_type::<BrokenPiece>()
             .register_type::<ImpactSettings>()
-            .register_type::<ProcedualBreakSettings>()
+            .register_type::<ProceduralBreakSettings>()
             .add_event::<BreakPropEvent>()
-            .add_systems(OnEnter(AppState::InGame), setup)
+            .add_systems(OnEnter(AppState::InGame), (setup, debug_gltf_nodes))
             .add_systems(FixedUpdate, (
                 detect_breakable_collisions,
                 break_props.after(detect_breakable_collisions),
@@ -41,13 +43,105 @@ struct Breakable {
 /// Component to control procedural breaking settings
 #[derive(Component, Reflect, Default)]
 #[reflect(Component)]
-struct ProcedualBreakSettings {
-    /// Number of procedural pieces to generate
+pub struct ProceduralBreakSettings {
     pub piece_count: u32,
-    /// Base color for procedural pieces
     pub color: Color,
-    /// Size multiplier for pieces
     pub size_multiplier: f32,
+    pub shape_distribution: ShapeDistribution,
+    pub max_size_variation: f32,
+    pub inner_color: Option<Color>, // For pieces from the "inside" of the object
+    pub maintain_proportion: bool,  // Keep pieces proportional to original object
+}
+
+#[derive(Reflect, Default)]
+pub enum ShapeDistribution {
+    #[default]
+    Random,
+    Mostly(ShapeType),
+    Only(ShapeType),
+    Custom(Vec<(ShapeType, f32)>), // Shape type with weight
+}
+
+#[derive(Reflect, Default)]
+pub enum ShapeType {
+    #[default]
+    Cube,
+    Sphere,
+    Cylinder,
+    Cone,
+    Tetrahedron,
+    Custom(Handle<Mesh>),
+}
+
+#[derive(Component, Reflect)]
+pub struct FracturePattern {
+    pub pattern_type: PatternType,
+    pub center_bias: f32,       // How much pieces cluster toward center
+    pub impact_alignment: f32,  // How much break aligns with impact direction
+    pub size_distribution: SizeDistribution,
+}
+
+#[derive(Reflect)]
+pub enum PatternType {
+    Radial,         // Pieces radiate from center
+    Layered,        // Pieces in layers (like an onion)
+    Linear,         // Pieces along a line
+    Voronoi,        // Natural looking random breaks
+    Custom(Vec<Transform>), // Custom offsets for each piece
+}
+
+#[derive(Reflect)]
+pub enum SizeDistribution {
+    Uniform,         // All pieces similar size
+    GradualIncrease, // Pieces get larger from center
+    GradualDecrease, // Pieces get smaller from center
+    Random,
+}
+
+#[derive(Component, Reflect)]
+pub struct GltfBreakPattern {
+    pub source: GltfSource,
+    pub transform_strategy: TransformStrategy,
+    pub piece_count_limit: Option<u32>,
+    pub random_selection: bool,
+}
+
+#[derive(Reflect)]
+pub enum GltfSource {
+    // Use nodes from a GLTF file based on naming pattern
+    NamedNodes {
+        handle: Handle<Gltf>,
+        name_pattern: NodePattern,
+    },
+    // Use pre-defined meshes
+    Meshes {
+        handles: Vec<Handle<GltfMesh>>,
+    },
+}
+
+#[derive(Reflect)]
+pub enum NodePattern {
+    Prefixed {
+        prefix: String,      // e.g., "piece_"
+        object_name: Option<String>, // Optional object name to filter further
+    },
+    Named(Vec<String>),      // Specific node names to look for
+    All,                     // Use all nodes in the file
+}
+
+#[derive(Reflect)]
+pub enum TransformStrategy {
+    PreserveOriginal,        // Use transforms as defined in GLTF
+    RandomizeRotation,       // Keep positions but randomize rotations
+    CenterAndExplode,        // Center all pieces and apply explosion force
+    AlignWithImpact,         // Align breaking direction with impact
+}
+
+#[derive(Reflect)]
+pub struct PieceModifications {
+    pub cut_planes: Vec<(Vec3, Vec3)>, // Position and normal for cutting planes
+    pub noise_amount: f32,             // Random noise to add to cuts
+    pub smooth_edges: bool,            // Smooth cut edges
 }
 
 /// Component to control impact and physics settings
@@ -217,16 +311,20 @@ fn break_props(
         &Transform,
         &GlobalTransform,
         Option<&ImpactSettings>,
-        Option<&ProcedualBreakSettings>
+        Option<&ProceduralBreakSettings>,
+        Option<&GltfBreakPattern>  // Add this to query GLTF break patterns
     )>,
     asset_server: Res<AssetServer>,
+    gltf_assets: Res<Assets<Gltf>>,      // Add this to access GLTF assets
+    gltf_meshes: Res<Assets<GltfMesh>>,  // Add this to access GLTF meshes
+    gltf_nodes: Res<Assets<GltfNode>>,   // Add this to access GLTF nodes
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let mut rng = rand::thread_rng();
 
     for event in break_events.read() {
-        if let Ok((entity, breakable, transform, global_transform, impact_settings, procedual_settings)) =
+        if let Ok((entity, breakable, transform, global_transform, impact_settings, procedual_settings, gltf_pattern)) =
             breakables.get(event.entity)
         {
             // Get default settings or use custom ones
@@ -245,8 +343,25 @@ fn break_props(
                 event.impact_point
             };
 
-            // Check if we have model pieces to spawn
-            if !breakable.broken_pieces.is_empty() {
+            // Priority 1: Check if we have a GLTF break pattern
+            if let Some(gltf_pattern) = gltf_pattern {
+                // Use GLTF-based breaking
+                spawn_gltf_pieces(
+                    &mut commands,
+                    gltf_pattern,
+                    &gltf_assets,
+                    &gltf_meshes,
+                    &gltf_nodes,
+                    global_transform,
+                    breakable,
+                    impact_point,
+                    event.impact_force,
+                    &impact,
+                    &mut rng,
+                );
+            }
+            // Priority 2: Check if we have model pieces to spawn
+            else if !breakable.broken_pieces.is_empty() {
                 spawn_model_pieces(
                     &mut commands,
                     &breakable.broken_pieces,
@@ -258,9 +373,8 @@ fn break_props(
                     &mut rng,
                 );
             }
-
-            // If we need procedural pieces
-            if let Some(proc_settings) = procedual_settings {
+            // Priority 3: If we need procedural pieces
+            else if let Some(proc_settings) = procedual_settings {
                 if proc_settings.piece_count > 0 {
                     let piece_material = materials.add(StandardMaterial {
                         base_color: proc_settings.color,
@@ -305,7 +419,6 @@ fn break_props(
         }
     }
 }
-
 /// Helper function to spawn model-based broken pieces
 fn spawn_model_pieces(
     commands: &mut Commands,
@@ -521,7 +634,7 @@ fn spawn_break_particles(
     // This is a simplified version - you'd typically use a particle system
     let particle_count = 8;
     let particle_size = 0.05;
-    let particle_color = Color::rgba(0.8, 0.7, 0.6, 0.8);
+    let particle_color = Color::srgba(0.8, 0.7, 0.6, 0.8);
 
     for _ in 0..particle_count {
         let velocity_direction = velocity.normalize_or_zero();
@@ -603,172 +716,261 @@ fn setup(
         (Vec3::new(3.0, 1.0, -1.0), "barrel", false),
         (Vec3::new(4.0, 1.0, 1.0), "barrel", false),
     ];
+    // Creating a breakable vase with GLTF node-based pieces
+    commands.spawn((
+        SceneRoot(asset_server.load("models/intact_vase.glb#Scene0")),
+        Transform::from_xyz(-5.0, 1.0, 0.0),
+        Collider::capsule(0.5, 0.3),
+        Breakable {
+            break_threshold: 2.0,
+            broken_pieces: vec![],
+            explosion_force: 1.0,
+            despawn_delay: 15.0,
+        },
+        GltfBreakPattern {
+            source: GltfSource::NamedNodes {
+                handle: asset_server.load("models/broken_vase.glb"),
+                name_pattern: NodePattern::Prefixed {
+                    prefix: "piece_".to_string(),
+                    object_name: Some("vase".into()),
+                },
+            },
+            transform_strategy: TransformStrategy::AlignWithImpact,
+            piece_count_limit: Some(10),
+            random_selection: true,
+        },
+        ImpactSettings::default(),
+    ));
 
-    // Create materials for different object types
-    let pot_material = materials.add(Color::rgb(0.8, 0.5, 0.3));
-    let crate_material = materials.add(Color::rgb(0.6, 0.4, 0.2));
-    let barrel_material = materials.add(Color::rgb(0.5, 0.3, 0.1));
 
-    // Spawn all objects
-    for (position, object_type, use_models) in objects.iter() {
-        match *object_type {
-            "vase" => {
-                commands.spawn((
-                    SceneRoot(asset_server.load("models/vase.glb#Scene0")),
-                    Transform::from_translation(*position),
-                    Collider::capsule(0.5, 0.3),
-                    Breakable {
-                        break_threshold: 2.0,
-                        broken_pieces: if *use_models {
-                            vec![
-                                asset_server.load("models/vase_piece1.glb#Scene0"),
-                                asset_server.load("models/vase_piece2.glb#Scene0"),
-                                asset_server.load("models/vase_piece3.glb#Scene0"),
-                                asset_server.load("models/vase_piece4.glb#Scene0"),
-                            ]
-                        } else {
-                            vec![]
-                        },
-                        explosion_force: 1.0,
-                        despawn_delay: 5.0,
+
+}
+/// Helper function to spawn pieces from GLTF nodes
+fn spawn_gltf_pieces(
+    commands: &mut Commands,
+    gltf_break_pattern: &GltfBreakPattern,
+    gltf_assets: &Res<Assets<Gltf>>,
+    gltf_meshes: &Res<Assets<GltfMesh>>,
+    gltf_nodes: &Res<Assets<GltfNode>>,
+    original_transform: &GlobalTransform,
+    breakable: &Breakable,
+    impact_point: Vec3,
+    impact_force: f32,
+    impact: &ImpactSettings,
+    rng: &mut impl Rng,
+) {
+    let original_pos = original_transform.translation();
+
+    match &gltf_break_pattern.source {
+        GltfSource::NamedNodes { handle, name_pattern } => {
+            if let Some(gltf) = gltf_assets.get(handle) {
+                // Get node handles based on pattern
+                let mut node_handles = Vec::new();
+
+                match name_pattern {
+                    NodePattern::Prefixed { prefix, object_name } => {
+                        // Filter nodes by prefix and optional object name
+                        for (name, node_handle) in &gltf.named_nodes {
+                            let matches_prefix = name.starts_with(prefix);
+                            let matches_object = object_name
+                                .as_ref()
+                                .map_or(true, |obj_name| name.contains(obj_name));
+
+                            if matches_prefix && matches_object {
+                                node_handles.push(node_handle.clone());
+                            }
+                        }
                     },
-                    ProcedualBreakSettings {
-                        piece_count: if *use_models { 0 } else { 8 },
-                        color: Color::rgb(0.7, 0.4, 0.3),
-                        size_multiplier: 1.0,
+                    NodePattern::Named(names) => {
+                        // Get specifically named nodes
+                        for name in names {
+                            if let Some(node_handle) = gltf.named_nodes.get(name.as_str()) {
+                                node_handles.push(node_handle.clone());
+                            }
+                        }
                     },
-                    ImpactSettings {
-                        max_scatter_distance: 5.0,
-                        play_sound: true,
-                        spawn_particles: true,
-                        piece_restitution: 0.2,
-                        piece_friction: 0.8,
-                        piece_linear_damping: 0.5,
-                        piece_angular_damping: 0.3,
-                    },
-                ));
-            },
-            "pot" => {
-                commands.spawn((
-                    Mesh3d(meshes.add(Cylinder::new(0.5, 0.4))),
-                    MeshMaterial3d(pot_material.clone()),
-                    Transform::from_translation(*position),
-                    Collider::cylinder(0.5, 0.4),
-                    Breakable {
-                        break_threshold: 1.5,
-                        broken_pieces: vec![],
-                        explosion_force: 0.8,
-                        despawn_delay: 4.0,
-                    },
-                    ProcedualBreakSettings {
-                        piece_count: 8,
-                        color: Color::rgb(0.8, 0.5, 0.3),
-                        size_multiplier: 1.0,
-                    },
-                    ImpactSettings::default(),
-                ));
-            },
-            "crate" => {
-                commands.spawn((
-                    Mesh3d(meshes.add(Cuboid::new(0.5, 0.5, 0.5))),
-                    MeshMaterial3d(crate_material.clone()),
-                    Transform::from_translation(*position),
-                    Collider::cuboid(0.25, 0.25, 0.25),
-                    Breakable {
-                        break_threshold: 2.5,
-                        broken_pieces: vec![],
-                        explosion_force: 1.2,
-                        despawn_delay: 5.0,
-                    },
-                    ProcedualBreakSettings {
-                        piece_count: 12,
-                        color: Color::rgb(0.6, 0.4, 0.2),
-                        size_multiplier: 0.8,
-                    },
-                    ImpactSettings {
-                        max_scatter_distance: 6.0,
-                        play_sound: true,
-                        spawn_particles: true,
-                        piece_restitution: 0.1,
-                        piece_friction: 0.9,
-                        piece_linear_damping: 0.6,
-                        piece_angular_damping: 0.4,
-                    },
-                ));
-            },
-            "barrel" => {
-                commands.spawn((
-                    Mesh3d(meshes.add(Cylinder::new(0.6, 0.4))),
-                    MeshMaterial3d(barrel_material.clone()),
-                    Transform::from_translation(*position),
-                    Collider::cylinder(0.6, 0.4),
-                    Breakable {
-                        break_threshold: 3.0,
-                        broken_pieces: vec![],
-                        explosion_force: 1.5,
-                        despawn_delay: 6.0,
-                    },
-                    ProcedualBreakSettings {
-                        piece_count: 10,
-                        color: Color::rgb(0.5, 0.3, 0.1),
-                        size_multiplier: 1.2,
-                    },
-                    ImpactSettings {
-                        max_scatter_distance: 7.0,
-                        play_sound: true,
-                        spawn_particles: true,
-                        piece_restitution: 0.15,
-                        piece_friction: 0.85,
-                        piece_linear_damping: 0.4,
-                        piece_angular_damping: 0.3,
-                    },
-                ));
-            },
-            _ => {}
+                    NodePattern::All => {
+                        // Get all nodes (though this might include non-piece nodes)
+                        node_handles = gltf.nodes.clone();
+                    }
+                }
+
+                // Apply piece count limit if specified
+                if let Some(limit) = gltf_break_pattern.piece_count_limit {
+                    if gltf_break_pattern.random_selection && node_handles.len() > limit as usize {
+                        // Randomly select nodes
+                        node_handles = node_handles
+                            .into_iter()
+                            .choose_multiple(rng, limit as usize);
+                    } else {
+                        // Take first N nodes
+                        node_handles.truncate(limit as usize);
+                    }
+                }
+
+                // Spawn each piece
+                for node_handle in node_handles {
+                    if let Some(node) = gltf_nodes.get(&node_handle) {
+                        // Only process nodes that have a mesh
+                        if let Some(mesh_handle) = node.mesh.as_ref() {
+                            if let Some(mesh) = gltf_meshes.get(mesh_handle) {
+                                // Calculate position based on transform strategy
+                                let (position, rotation) = calculate_piece_transform(
+                                    original_transform,
+                                    &node.transform,
+                                    impact_point,
+                                    &gltf_break_pattern.transform_strategy,
+                                    rng,
+                                );
+
+                                // Spawn the piece with the node's mesh
+                                let piece_entity = commands.spawn((
+                                    // Use Mesh3d and MeshMaterial3d for rendering
+                                    Mesh3d(mesh.primitives[0].mesh.clone()),
+                                    MeshMaterial3d(mesh.primitives[0].material.clone().unwrap_or_default()),
+                                    Transform::from_translation(position).with_rotation(rotation),
+                                    BrokenPiece {
+                                        timer: Timer::new(Duration::from_secs_f32(breakable.despawn_delay), TimerMode::Once),
+                                        original_position: original_pos,
+                                        max_distance: impact.max_scatter_distance,
+                                    },
+                                    LinearDamping(impact.piece_linear_damping),
+                                    AngularDamping(impact.piece_angular_damping),
+                                    Restitution::new(impact.piece_restitution),
+                                    Friction::new(impact.piece_friction),
+                                    // Use a collider that better matches the piece shape
+                                    create_collider_for_mesh(&mesh.primitives[0].mesh),
+                                    MaxLinearSpeed(5.0),
+                                )).id();
+
+                                // Apply explosion impulses
+                                apply_explosion_impulse(
+                                    commands,
+                                    piece_entity,
+                                    position,
+                                    impact_point,
+                                    breakable.explosion_force,
+                                    impact_force,
+                                    rng,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        GltfSource::Meshes { handles } => {
+            // Similar implementation for direct mesh handles
+            // ...
         }
     }
+}
 
-    // Spawn a wrecking sphere for testing
-    commands.spawn((
-        Mesh3d(meshes.add(Sphere::new(0.5))),
-        Transform::from_xyz(5.0, 1.0, 0.0),
-        Collider::sphere(0.5),
-        RigidBody::Dynamic,
-        Mass(10.0),
-        ExternalImpulse::new(Vec3::new(-5.0, 0.5, 0.0)),
-    ));
+/// Helper function to calculate piece transforms based on strategy
+fn calculate_piece_transform(
+    original_transform: &GlobalTransform,
+    node_transform: &Transform,
+    impact_point: Vec3,
+    strategy: &TransformStrategy,
+    rng: &mut impl Rng,
+) -> (Vec3, Quat) {
+    let original_pos = original_transform.translation();
 
-    // Add some walls to keep things contained
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(0.5, 1.0, 20.0))),
-        MeshMaterial3d(materials.add(Color::rgba(0.5, 0.5, 0.5, 0.5))),
-        Transform::from_xyz(-10.0, 0.5, 0.0),
-        Collider::cuboid(0.25, 0.5, 10.0),
-        RigidBody::Static,
-    ));
+    match strategy {
+        TransformStrategy::PreserveOriginal => {
+            // Apply original transform with node's transform
+            let node_global = original_transform.mul_transform(*node_transform);
+            (node_global.translation(), node_global.rotation())
+        },
+        TransformStrategy::RandomizeRotation => {
+            // Keep position from node but randomize rotation
+            let node_global = original_transform.mul_transform(*node_transform);
+            let rotation = Quat::from_euler(
+                EulerRot::XYZ,
+                rng.gen_range(-std::f32::consts::PI..std::f32::consts::PI),
+                rng.gen_range(-std::f32::consts::PI..std::f32::consts::PI),
+                rng.gen_range(-std::f32::consts::PI..std::f32::consts::PI),
+            );
+            (node_global.translation(), rotation)
+        },
+        TransformStrategy::CenterAndExplode => {
+            // Position pieces with more dramatic offsets
+            let piece_local_pos = node_transform.translation;
+            let direction = piece_local_pos.normalize_or_zero();
+            let direction = if direction.length_squared() < 0.001 {
+                Vec3::new(
+                    rng.gen_range(-1.0..1.0),
+                    rng.gen_range(0.1..1.0),
+                    rng.gen_range(-1.0..1.0),
+                ).normalize()
+            } else {
+                direction
+            };
 
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(0.5, 1.0, 20.0))),
-        MeshMaterial3d(materials.add(Color::rgba(0.5, 0.5, 0.5, 0.5))),
-        Transform::from_xyz(10.0, 0.5, 0.0),
-        Collider::cuboid(0.25, 0.5, 10.0),
-        RigidBody::Static,
-    ));
+            let offset = direction * (piece_local_pos.length() * 0.5 + rng.gen_range(0.1..0.3));
+            let rotation = Quat::from_euler(
+                EulerRot::XYZ,
+                rng.gen_range(-std::f32::consts::PI..std::f32::consts::PI),
+                rng.gen_range(-std::f32::consts::PI..std::f32::consts::PI),
+                rng.gen_range(-std::f32::consts::PI..std::f32::consts::PI),
+            );
+            (original_pos + offset, rotation)
+        },
+        TransformStrategy::AlignWithImpact => {
+            // Calculate direction from impact to original position
+            let impact_dir = (original_pos - impact_point).normalize_or_zero();
+            let piece_local_pos = node_transform.translation;
 
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(20.0, 1.0, 0.5))),
-        MeshMaterial3d(materials.add(Color::rgba(0.5, 0.5, 0.5, 0.5))),
-        Transform::from_xyz(0.0, 0.5, -10.0),
-        Collider::cuboid(10.0, 0.5, 0.25),
-        RigidBody::Static,
-    ));
+            // Use impact direction but preserve relative position of piece
+            let local_dir = piece_local_pos.normalize_or_zero();
+            let direction = if impact_dir.length_squared() > 0.001 {
+                if local_dir.length_squared() > 0.001 {
+                    // Blend impact direction with local direction
+                    (impact_dir + local_dir * 0.5).normalize()
+                } else {
+                    impact_dir
+                }
+            } else if local_dir.length_squared() > 0.001 {
+                local_dir
+            } else {
+                Vec3::new(
+                    rng.gen_range(-1.0..1.0),
+                    rng.gen_range(0.1..1.0),
+                    rng.gen_range(-1.0..1.0),
+                ).normalize()
+            };
 
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(20.0, 1.0, 0.5))),
-        MeshMaterial3d(materials.add(Color::rgba(0.5, 0.5, 0.5, 0.5))),
-        Transform::from_xyz(0.0, 0.5, 10.0),
-        Collider::cuboid(10.0, 0.5, 0.25),
-        RigidBody::Static,
-    ));
+            // Create offset and rotation aligned with impact
+            let distance = piece_local_pos.length();
+            let offset = direction * (distance + rng.gen_range(0.05..0.2));
+            let base_rotation = original_transform.rotation();
+            let additional_rotation = Quat::from_rotation_arc(Vec3::Y, direction);
+            (original_pos + offset, base_rotation * additional_rotation)
+        }
+    }
+}
 
+/// Helper function to create an appropriate collider for a mesh
+fn create_collider_for_mesh(mesh: &Handle<Mesh>) -> Collider {
+    // In a real implementation, you'd analyze the mesh and create a proper collider
+    // For simplicity, we'll just use a cuboid collider here
+    Collider::cuboid(0.2, 0.2, 0.2)
+
+    // In a more advanced implementation, you could:
+    // 1. Use Collider::trimesh_from_bevy_mesh(mesh)
+    // 2. Calculate an approximate convex hull
+    // 3. Use primitive shapes that best fit the mesh
+}
+// Add this function and call it from your setup function
+fn debug_gltf_nodes(gltf_assets: Res<Assets<Gltf>>, asset_server: Res<AssetServer>) {
+    let handle = asset_server.load("models/broken_vase.glb");
+
+    if let Some(gltf) = gltf_assets.get(&handle) {
+        println!("GLTF loaded! Found {} named nodes:", gltf.named_nodes.len());
+        for (name, _) in &gltf.named_nodes {
+            println!("  Node name: {}", name);
+        }
+    } else {
+        println!("GLTF not loaded yet or failed to load");
+    }
 }

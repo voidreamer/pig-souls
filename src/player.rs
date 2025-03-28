@@ -143,7 +143,7 @@ fn setup(
         Friction::ZERO.with_combine_rule(CoefficientCombine::Min),
         Restitution::ZERO.with_combine_rule(CoefficientCombine::Min),
         GravityScale(2.0),
-        Mass(10.0),
-        ExternalImpulse::new(Vec3::new(-5.0, 0.5, 0.0)),
+        Mass(2.0),
+        ExternalImpulse::new(Vec3::new(-1.0, 0.5, 0.0)),
     ));
 }
