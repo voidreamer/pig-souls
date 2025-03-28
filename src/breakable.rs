@@ -300,7 +300,14 @@ fn break_props(
     let mut rng = rand::thread_rng();
 
     for event in break_events.read() {
-        if let Ok((entity, breakable, global_transform, impact_settings, procedual_settings, gltf_pattern)) =
+        if let Ok((
+                  entity,
+                  breakable,
+                  global_transform,
+                  impact_settings,
+                  procedural_settings,
+                  gltf_pattern
+              )) =
             breakables.get(event.entity)
         {
             // Get default settings or use custom ones
@@ -350,7 +357,7 @@ fn break_props(
                 );
             }
             // Priority 3: If we need procedural pieces
-            else if let Some(proc_settings) = procedual_settings {
+            else if let Some(proc_settings) = procedural_settings {
                 if proc_settings.piece_count > 0 {
                     let piece_material = materials.add(StandardMaterial {
                         base_color: proc_settings.color,
@@ -724,7 +731,7 @@ fn setup(
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(0.5, 0.5, 0.5))),
         MeshMaterial3d(materials.add(Color::srgb(0.6, 0.4, 0.2))),
-        Transform::from_xyz(0.0, 1.0, -2.0),
+        Transform::from_xyz(8.0, 1.0, -2.0),
         Collider::cuboid(0.25, 0.25, 0.25),
         Breakable {
             break_threshold: 2.5,

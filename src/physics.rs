@@ -8,9 +8,9 @@ pub(crate) struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins(PhysicsPlugins::default().set(PhysicsInterpolationPlugin::extrapolate_all()))
             .add_plugins(BreakablePropsPlugin)
-            .add_plugins(PhysicsDebugPlugin::default());
+            .add_plugins(PhysicsDebugPlugin::default())
+            .add_plugins(PhysicsPlugins::default().set(PhysicsInterpolationPlugin::extrapolate_all()));
     }
 }
 

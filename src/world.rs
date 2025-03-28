@@ -33,9 +33,9 @@ fn setup(
 
     // Environment (see the `collider_constructors` example for creating colliders from scenes)
     commands.spawn((
-        SceneRoot(asset_server.load("area_0001.glb#Scene0")),
+        SceneRoot(asset_server.load("area_0001.gltf#Scene0")),
         //Transform::from_xyz(0.0, -15.0, 0.0),
-        Transform::from_xyz(0.0, 0.0, 0.0),
+        Transform::from_xyz(0.0, -0.1, 0.0),
         ColliderConstructorHierarchy::new(ColliderConstructor::TrimeshFromMesh),
         RigidBody::Static,
     ));
