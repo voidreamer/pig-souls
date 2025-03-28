@@ -1,0 +1,11 @@
+assets/area_0001.glb filter=lfs diff=lfs merge=lfs -text
+assets/sounds/breaking.ogg filter=lfs diff=lfs merge=lfs -text
+assets/models/animated/Fox.glb filter=lfs diff=lfs merge=lfs -text
+assets/models/intact_vase.glb filter=lfs diff=lfs merge=lfs -text
+assets/models/broken_vase.glb filter=lfs diff=lfs merge=lfs -text
+assets/environment_maps/cubes_reflection_probe_specular_rgb9e5_zstd.ktx2 filter=lfs diff=lfs merge=lfs -text
+assets/environment_maps/info.txt filter=lfs diff=lfs merge=lfs -text
+assets/environment_maps/pisa_diffuse_rgb9e5_zstd.ktx2 filter=lfs diff=lfs merge=lfs -text
+assets/environment_maps/pisa_specular_rgb9e5_zstd.ktx2 filter=lfs diff=lfs merge=lfs -text
+assets/environment_maps/sky_skybox.ktx2 filter=lfs diff=lfs merge=lfs -text
+assets/textures/fx/cloud.png filter=lfs diff=lfs merge=lfs -text
