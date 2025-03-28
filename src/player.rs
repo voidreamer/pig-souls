@@ -82,13 +82,13 @@ impl Default for Player {
 
             // Roll settings
             is_rolling: false,
-            roll_speed: 500.0,       // Fast roll speed
-            roll_duration: 0.4,      // How long the roll lasts in seconds
+            roll_speed: 1000.0,       // Fast roll speed
+            roll_duration: 0.1,      // How long the roll lasts in seconds
             roll_cooldown: 0.5,      // Time before player can roll again
             roll_timer: 0.0,         // Current active roll time
             roll_cooldown_timer: 0.0, // Current cooldown timer
             roll_direction: Vec3::ZERO,
-            roll_distance: 4.0,      // Distance of the roll
+            roll_distance: 1.0,      // Distance of the roll
             can_roll: true,          // Can player roll right now
 
             // Jump improvements

@@ -381,16 +381,6 @@ fn break_props(
                 }
             }
 
-            // Optional: Spawn particles at impact point
-            if impact.spawn_particles {
-                spawn_break_particles(
-                    &mut commands,
-                    &mut meshes,
-                    impact_point,
-                    event.impact_velocity,
-                );
-            }
-
             // Play break sound
             if impact.play_sound {
                 commands.spawn(AudioPlayer::new(asset_server.load("sounds/breaking.ogg")));
@@ -603,51 +593,6 @@ fn apply_explosion_impulse(
     commands.entity(entity).insert(impulse);
 }
 
-/// Helper function to spawn particles at the break point
-fn spawn_break_particles(
-    commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    position: Vec3,
-    velocity: Vec3,
-) {
-    // This is a simplified version - you'd typically use a particle system
-    let particle_count = 8;
-    let particle_size = 0.05;
-
-    for _ in 0..particle_count {
-        let velocity_direction = velocity.normalize_or_zero();
-        let mut rng = rand::thread_rng();
-
-        // Random direction biased toward the impact velocity
-        let random_dir = Vec3::new(
-            rng.gen_range(-1.0..1.0),
-            rng.gen_range(0.0..1.0),
-            rng.gen_range(-1.0..1.0),
-        ).normalize();
-
-        let direction = if velocity_direction.length_squared() > 0.001 {
-            (velocity_direction + random_dir * 0.5).normalize()
-        } else {
-            random_dir
-        };
-
-        // Spawn a small particle with physics
-        commands.spawn((
-            Transform::from_translation(position),
-            Mesh3d(meshes.add(Sphere::new(particle_size * rng.gen_range(0.5..1.0)))),
-            // BrokenPiece requires all the physics components
-            BrokenPiece {
-                timer: Timer::new(Duration::from_secs_f32(1.5), TimerMode::Once),
-                original_position: position,
-                max_distance: 10.0,
-            },
-            // Override with particle-specific settings
-            LinearDamping(0.8),
-            Collider::sphere(particle_size * 0.5),
-            ExternalImpulse::new(direction * rng.gen_range(0.5..1.5)),
-        ));
-    }
-}
 
 /// System to despawn broken pieces after their timer expires or if they travel too far
 fn despawn_broken_pieces(
@@ -677,13 +622,15 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let mut collider_height = 0.5;
+    let collider_height_offset = 0.1;
     // Creating a breakable vase with GLTF node-based pieces
     commands.spawn((
         SceneRoot(asset_server.load("models/intact_vase.glb#Scene0")),
-        Transform::from_xyz(-5.0, 1.0, 0.0),
-        Collider::capsule(0.5, 0.3),
+        Transform::from_xyz(-5.0, collider_height + collider_height_offset, 0.0),
+        Collider::capsule(0.5, collider_height),
         Breakable {
-            break_threshold: 2.0,
+            break_threshold: 20.0,
             broken_pieces: vec![],
             explosion_force: 1.0,
             despawn_delay: 8.0,
@@ -701,16 +648,18 @@ fn setup(
             random_selection: true,
         },
         ImpactSettings::default(),
+
     ));
 
     // Add procedural breakable objects
+    collider_height = 0.4;
     commands.spawn((
-        Mesh3d(meshes.add(Sphere::new(0.4))),
+        Mesh3d(meshes.add(Sphere::new(collider_height))),
         MeshMaterial3d(materials.add(Color::srgb(0.8, 0.4, 0.3))),
-        Transform::from_xyz(-2.0, 1.0, -1.0),
-        Collider::sphere(0.4),
+        Transform::from_xyz(-2.0, collider_height + collider_height_offset, -1.0),
+        Collider::sphere(collider_height),
         Breakable {
-            break_threshold: 1.5,
+            break_threshold: 20.0,
             broken_pieces: vec![],
             explosion_force: 0.8,
             despawn_delay: 4.0,
@@ -728,13 +677,14 @@ fn setup(
     ));
 
     // Add a crate with different breaking properties
+    collider_height = 0.25;
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(0.5, 0.5, 0.5))),
         MeshMaterial3d(materials.add(Color::srgb(0.6, 0.4, 0.2))),
-        Transform::from_xyz(8.0, 1.0, -2.0),
-        Collider::cuboid(0.25, 0.25, 0.25),
+        Collider::cuboid(0.25, collider_height, 0.25),
+        Transform::from_xyz(8.0, collider_height + collider_height_offset, -2.0),
         Breakable {
-            break_threshold: 2.5,
+            break_threshold: 20.0,
             broken_pieces: vec![],
             explosion_force: 1.2,
             despawn_delay: 5.0,

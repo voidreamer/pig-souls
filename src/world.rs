@@ -34,19 +34,11 @@ fn setup(
     // Environment (see the `collider_constructors` example for creating colliders from scenes)
     commands.spawn((
         SceneRoot(asset_server.load("area_0001.gltf#Scene0")),
-        //Transform::from_xyz(0.0, -15.0, 0.0),
-        Transform::from_xyz(0.0, -0.1, 0.0),
+        Transform::from_xyz(0.0, 0.0, 0.0),
         ColliderConstructorHierarchy::new(ColliderConstructor::TrimeshFromMesh),
         RigidBody::Static,
     ));
 
-
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(100.0, 0.1, 100.0))),
-        Transform::from_rotation(Quat::from_rotation_y(-core::f32::consts::PI * 0.5)),
-        RigidBody::Static,
-        Collider::cuboid(100.0, 0.1, 100.0)
-    ));
 
     // Light
     commands.spawn((

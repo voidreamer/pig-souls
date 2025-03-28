@@ -75,8 +75,8 @@ pub fn movement(
         for (_, _, mut linear_velocity, _, _, _) in &mut controllers {
             // Apply roll velocity
             let roll_velocity = player.roll_direction * player.roll_speed * delta_time;
-            linear_velocity.x = roll_velocity.x as f32;
-            linear_velocity.z = roll_velocity.z as f32;
+            linear_velocity.x = roll_velocity.x;
+            linear_velocity.z = roll_velocity.z;
         }
         return;
     }
