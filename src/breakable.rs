@@ -290,7 +290,7 @@ fn break_props(
         Option<&ProceduralBreakSettings>,
         Option<&GltfBreakPattern>
     )>,
-    _asset_server: Res<AssetServer>,
+    asset_server: Res<AssetServer>,
     gltf_assets: Res<Assets<Gltf>>,
     gltf_meshes: Res<Assets<GltfMesh>>,
     gltf_nodes: Res<Assets<GltfNode>>,
@@ -384,12 +384,9 @@ fn break_props(
                 );
             }
 
-            // Optional: Play break sound
+            // Play break sound
             if impact.play_sound {
-                // Uncomment when you have audio assets
-                /*
-                commands.spawn(AudioPlayer(asset_server.load("sounds/break.ogg")));
-                */
+                commands.spawn(AudioPlayer::new(asset_server.load("sounds/breaking.ogg")));
             }
         }
     }
@@ -682,7 +679,7 @@ fn setup(
             break_threshold: 2.0,
             broken_pieces: vec![],
             explosion_force: 1.0,
-            despawn_delay: 15.0,
+            despawn_delay: 8.0,
         },
         GltfBreakPattern {
             source: GltfSource::NamedNodes {

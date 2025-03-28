@@ -21,31 +21,25 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-    // Environment (see the `collider_constructors` example for creating colliders from scenes)
-    commands.spawn((
-        Transform::from_xyz(0.0, 0.0, 0.0),
-        Visibility::default(),
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(50.0, 50.0))),
-        MeshMaterial3d(materials.add(Color::srgb(0.5, 0.5, 1.0))),
-        Collider::cuboid(50.0, 0.1, 50.0),
-        RigidBody::Static,
-    ));
     /*
+    // Environment (see the `collider_constructors` example for creating colliders from scenes)
     commands.spawn((
         SceneRoot(asset_server.load("character_controller_demo.glb#Scene0")),
         Transform::from_rotation(Quat::from_rotation_y(-core::f32::consts::PI * 0.5)),
         ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
         RigidBody::Static,
     ));
+     */
 
     // Environment (see the `collider_constructors` example for creating colliders from scenes)
     commands.spawn((
-        SceneRoot(asset_server.load("area_0005.glb#Scene0")),
-        // Transform::from_rotation(Quat::from_rotation_y(-core::f32::consts::PI * 0.5)),
-        Transform::from_xyz(0.0, -15.0, 0.0),
+        SceneRoot(asset_server.load("area_0001.glb#Scene0")),
+        //Transform::from_xyz(0.0, -15.0, 0.0),
+        Transform::from_xyz(0.0, 0.0, 0.0),
         ColliderConstructorHierarchy::new(ColliderConstructor::TrimeshFromMesh),
         RigidBody::Static,
     ));
+
 
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(100.0, 0.1, 100.0))),
@@ -53,7 +47,6 @@ fn setup(
         RigidBody::Static,
         Collider::cuboid(100.0, 0.1, 100.0)
     ));
-     */
 
     // Light
     commands.spawn((
