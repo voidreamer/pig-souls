@@ -30,12 +30,10 @@ impl Plugin for BreakablePropsPlugin {
 /// Primary component to mark entities as breakable
 #[derive(Component, Reflect, Default)]
 #[reflect(Component)]
-#[require(RigidBody)] // All breakable objects must be rigid bodies
+#[require(RigidBody)]
 struct Breakable {
     /// Minimum impulse required to break the prop
     pub break_threshold: f32,
-    /// Handles to the broken pieces' scene or mesh
-    pub broken_pieces: Vec<Handle<Scene>>,
     /// Initial impulse to apply to the pieces when broken
     pub explosion_force: f32,
     /// How long the pieces should exist before despawning
@@ -343,19 +341,7 @@ fn break_props(
                     &mut rng,
                 );
             }
-            // Priority 2: Check if we have model pieces to spawn
-            else if !breakable.broken_pieces.is_empty() {
-                spawn_model_pieces(
-                    &mut commands,
-                    &breakable.broken_pieces,
-                    breakable,
-                    global_transform,
-                    impact_point,
-                    event.impact_force,
-                    &impact,
-                    &mut rng,
-                );
-            }
+
             // Priority 3: If we need procedural pieces
             else if let Some(proc_settings) = procedural_settings {
                 if proc_settings.piece_count > 0 {
@@ -615,7 +601,6 @@ fn despawn_broken_pieces(
     }
 }
 
-/// Example usage in game setup
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -629,9 +614,9 @@ fn setup(
         SceneRoot(asset_server.load("models/intact_vase.glb#Scene0")),
         Transform::from_xyz(-5.0, collider_height + collider_height_offset, 0.0),
         Collider::capsule(0.5, collider_height),
+        Mass(20.0),
         Breakable {
-            break_threshold: 20.0,
-            broken_pieces: vec![],
+            break_threshold: 15.0,
             explosion_force: 1.0,
             despawn_delay: 8.0,
         },
@@ -658,9 +643,9 @@ fn setup(
         MeshMaterial3d(materials.add(Color::srgb(0.8, 0.4, 0.3))),
         Transform::from_xyz(-2.0, collider_height + collider_height_offset, -1.0),
         Collider::sphere(collider_height),
+        Mass(20.0),
         Breakable {
-            break_threshold: 20.0,
-            broken_pieces: vec![],
+            break_threshold: 15.0,
             explosion_force: 0.8,
             despawn_delay: 4.0,
         },
@@ -683,9 +668,9 @@ fn setup(
         MeshMaterial3d(materials.add(Color::srgb(0.6, 0.4, 0.2))),
         Collider::cuboid(0.25, collider_height, 0.25),
         Transform::from_xyz(8.0, collider_height + collider_height_offset, -2.0),
+        Mass(20.0),
         Breakable {
-            break_threshold: 20.0,
-            broken_pieces: vec![],
+            break_threshold: 15.0,
             explosion_force: 1.2,
             despawn_delay: 5.0,
         },

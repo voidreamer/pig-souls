@@ -8,6 +8,7 @@ mod character_controller;
 mod physics;
 mod world;
 mod breakable;
+mod proc;
 
 use bevy::prelude::*;
 use bevy::window::{WindowResolution};
@@ -44,5 +45,6 @@ fn main() {
         .add_plugins(camera::CameraPlugin)
         .add_plugins(world::WorldPlugin)
         .add_plugins(character_controller::CharacterControllerPlugin)
+        .add_plugins(proc::ProceduralPlugin)
         .run();
 }

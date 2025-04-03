@@ -12,6 +12,7 @@ bevy_skein = "*"
 rand = "0.8.5"
 bevy-inspector-egui = {version = "*"}
 bevy_foliage_tool = "0.15.14"
+bevy_ghx_proc_gen = {git="https://github.com/Henauxg/ghx_proc_gen", branch="main"}
 
 # Optimizations in debug mode
 [profile.dev]
