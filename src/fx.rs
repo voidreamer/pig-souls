@@ -84,6 +84,8 @@ fn create_fire_effect(effects: &mut Assets<EffectAsset>, position: Vec3) -> Hand
             .update(drag)
             .render(ColorOverLifetimeModifier {
                 gradient: color_gradient_fire,
+                blend: Default::default(),
+                mask: Default::default(),
             })
             .render(SizeOverLifetimeModifier {
                 gradient: size_gradient_fire,
@@ -173,6 +175,8 @@ pub fn create_fire_step_effect(
             .update(drag)
             .render(ColorOverLifetimeModifier {
                 gradient: color_gradient_fire,
+                blend: Default::default(),
+                mask: Default::default(),
             })
             .render(SizeOverLifetimeModifier {
                 gradient: size_gradient_fire,
@@ -244,6 +248,8 @@ fn create_spark_effect(effects: &mut Assets<EffectAsset>, position: Vec3) -> Han
             .update(update_drag)
             .render(ColorOverLifetimeModifier {
                 gradient: color_gradient_spark,
+                blend: Default::default(),
+                mask: Default::default(),
             })
             .render(SizeOverLifetimeModifier {
                 gradient: size_gradient_spark,

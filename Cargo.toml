@@ -4,15 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = {version = "*", features = ["dynamic_linking"]}
-avian3d = {version = "*"}
-bevy_hanabi = {git = "https://github.com/djeedai/bevy_hanabi", branch="main", default-features = true, features = [ "3d", "serde" ] }
+bevy = {version = "0.15.3", features = ["dynamic_linking"]}
+avian3d = {version = "0.2.1"}
+bevy_hanabi = "*"
 bevy_skein = "*"
 
 rand = "0.8.5"
 bevy-inspector-egui = {version = "*"}
-bevy_foliage_tool = "0.15.14"
-bevy_ghx_proc_gen = {git="https://github.com/Henauxg/ghx_proc_gen", branch="main"}
+bevy_ghx_proc_gen = { git = "https://github.com/Henauxg/ghx_proc_gen", branch= "main" }
 
 # Optimizations in debug mode
 [profile.dev]

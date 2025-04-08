@@ -34,14 +34,15 @@ use bevy_ghx_proc_gen::{
         ghx_grid::coordinate_system::CoordinateSystem,
     },
     debug_plugin::{
-        cursor::{CursorsOverlaysRoot, CursorsPanelRoot},
         egui_editor::{paint, toggle_editor, update_painting_state, EditorContext},
-        DebugPluginConfig, GenerationControl, GenerationControlStatus, GenerationViewMode,
+        generation::GenerationViewMode,
+        DebugPluginConfig,
         ProcGenDebugPlugins,
     },
     insert_bundle_from_resource_to_spawned_nodes,
     proc_gen::ghx_grid::cartesian::coordinates::CartesianCoordinates,
 };
+
 use crate::game_states::AppState;
 use crate::proc::anim::{animate_scale, ease_in_cubic, SpawningScaleAnimation};
 
@@ -95,8 +96,6 @@ impl<C: CartesianCoordinates, A: BundleInserter> Plugin for ProcGenExamplesPlugi
                     .run_if(input_just_pressed(KeyCode::F1)),
                 toggle_debug_grids_visibilities.run_if(input_just_pressed(KeyCode::F2)),
                 toggle_grid_markers_visibilities.run_if(input_just_pressed(KeyCode::F3)),
-                update_generation_control_ui,
-                // Quick adjust of the slowish spawn animation to be more snappy when painting
                 adjust_spawn_animation_when_painting
                     .after(update_painting_state)
                     .before(paint::<C>),
@@ -239,27 +238,3 @@ pub const GENERATION_CONTROL_STATUS_TEXT_SECTION_ID: usize = 1;
 pub const GENERATION_CONTROL_TEXT_SECTION_ID: usize = 2;
 pub const GENERATION_VIEW_MODE_TEXT_SECTION_ID: usize = 3;
 
-pub fn update_generation_control_ui(
-    mut writer: TextUiWriter,
-    gen_control: Res<GenerationControl>,
-    mut query: Query<Entity, With<GenerationControlText>>,
-) {
-    for text_entity in &mut query {
-        let (text, color) = match gen_control.status {
-            GenerationControlStatus::Ongoing => ("Ongoing ('Space' to pause)".into(), GREEN.into()),
-            GenerationControlStatus::Paused => {
-                ("Paused ('Space' to unpause)".into(), YELLOW_GREEN.into())
-            }
-        };
-        *writer.text(text_entity, GENERATION_CONTROL_STATUS_TEXT_SECTION_ID) = text;
-        *writer.color(text_entity, GENERATION_CONTROL_STATUS_TEXT_SECTION_ID) = color;
-
-        * writer.text(text_entity, GENERATION_CONTROL_TEXT_SECTION_ID)=  format!(
-            "\nGenerationControl: skip_void_nodes: {}, pause_when_done: {}, pause_on_error: {}, pause_on_reinitialize: {}",
-            gen_control.skip_void_nodes,
-            gen_control.pause_when_done,
-            gen_control.pause_on_error,
-            gen_control.pause_on_reinitialize
-        );
-    }
-}
