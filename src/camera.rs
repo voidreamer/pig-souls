@@ -9,6 +9,7 @@ use bevy::{
     math::StableInterpolate
 };
 use avian3d::prelude::*;
+use bevy::pbr::Atmosphere;
 use crate::game_states::AppState;
 use crate::player::Player;
 
@@ -91,16 +92,20 @@ pub fn spawn_camera(
 
         // Add third-person camera controller
         ThirdPersonCamera::default(),
+        Atmosphere::EARTH,
+
 
     ))
-    .insert(ScreenSpaceAmbientOcclusion{
-        quality_level: ScreenSpaceAmbientOcclusionQualityLevel::High,
-        constant_object_thickness: 4.0,
-    })
+        /*
     .insert(Skybox{
             image: asset_server.load("environment_maps/pisa_specular_rgb9e5_zstd.ktx2"),
             brightness: 1000.0,
             ..default()
+    })
+         */
+    .insert(ScreenSpaceAmbientOcclusion{
+        quality_level: ScreenSpaceAmbientOcclusionQualityLevel::High,
+        constant_object_thickness: 4.0,
     });
 }
 
@@ -127,30 +132,25 @@ pub fn third_person_camera(
         (player_query.get_single(), camera_query.get_single_mut()) {
 
         // Handle mouse input for camera rotation
-        let window = primary_window.single();
-        let window_focused = window.focused;
+        // Update camera rotation based on mouse movement
+        for event in mouse_motion.read() {
+            // Apply inversion if configured
+            let dx = if camera_params.invert_x { -event.delta.x } else { event.delta.x };
+            let dy = if camera_params.invert_y { -event.delta.y } else { event.delta.y };
 
-        if window_focused {
-            // Update camera rotation based on mouse movement
-            for event in mouse_motion.read() {
-                // Apply inversion if configured
-                let dx = if camera_params.invert_x { -event.delta.x } else { event.delta.x };
-                let dy = if camera_params.invert_y { -event.delta.y } else { event.delta.y };
+            // Apply rotation speed
+            camera_params.yaw -= dx * camera_params.rotation_speed;
+            camera_params.pitch += dy * camera_params.rotation_speed;
 
-                // Apply rotation speed
-                camera_params.yaw -= dx * camera_params.rotation_speed;
-                camera_params.pitch += dy * camera_params.rotation_speed;
+            // Clamp pitch to prevent flipping (limit how far up/down the camera can look)
+            camera_params.pitch = camera_params.pitch.clamp(0.5, 1.4);
+        }
 
-                // Clamp pitch to prevent flipping (limit how far up/down the camera can look)
-                camera_params.pitch = camera_params.pitch.clamp(0.5, 1.4);
-            }
-
-            // Handle zoom with mouse wheel
-            for event in mouse_wheel.read() {
-                camera_params.distance -= event.y * camera_params.zoom_speed;
-                // Clamp distance to reasonable values
-                camera_params.distance = camera_params.distance.clamp(2.0, 15.0);
-            }
+        // Handle zoom with mouse wheel
+        for event in mouse_wheel.read() {
+            camera_params.distance -= event.y * camera_params.zoom_speed;
+            // Clamp distance to reasonable values
+            camera_params.distance = camera_params.distance.clamp(2.0, 15.0);
         }
 
         // GAMEPAD CAMERA CONTROL

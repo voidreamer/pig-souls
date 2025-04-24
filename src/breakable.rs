@@ -19,11 +19,14 @@ impl Plugin for BreakablePropsPlugin {
             .register_type::<FracturePattern>()
             .add_event::<BreakPropEvent>()
             .add_systems(OnEnter(AppState::InGame), setup)
+            /*
             .add_systems(FixedUpdate, (
                 detect_breakable_collisions,
                 break_props.after(detect_breakable_collisions),
                 despawn_broken_pieces,
-            ).run_if(in_state(AppState::InGame)));
+            ).run_if(in_state(AppState::InGame)))
+             */
+            ;
     }
 }
 
@@ -205,8 +208,9 @@ pub struct BreakPropEvent {
 }
 
 /// System to detect collisions with breakable props
+/*
 fn detect_breakable_collisions(
-    mut collision_events: EventReader<Collision>,
+    mut collision_events: EventReader<CollisionStarted>,
     mut break_events: EventWriter<BreakPropEvent>,
     breakables: Query<&Breakable>,
     transforms: Query<&GlobalTransform>,
@@ -275,6 +279,7 @@ fn detect_breakable_collisions(
         });
     }
 }
+ */
 
 /// System to handle breaking props with improved physics and effects
 fn break_props(
@@ -312,7 +317,7 @@ fn break_props(
             let impact = impact_settings.cloned().unwrap_or_default();
 
             // Despawn the original intact prop
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
 
             // Get the original position
             let original_pos = global_transform.translation();
@@ -594,8 +599,8 @@ fn despawn_broken_pieces(
 
         // Despawn if timer finished or if piece traveled too far
         if piece.timer.finished() || distance_from_origin > piece.max_distance {
-            if commands.get_entity(entity).is_some() {
-                commands.entity(entity).despawn_recursive();
+            if commands.get_entity(entity).is_ok() {
+                commands.entity(entity).despawn();
             }
         }
     }

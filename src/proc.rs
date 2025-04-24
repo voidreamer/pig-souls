@@ -1,3 +1,4 @@
+/*
 use std::sync::Arc;
 
 use bevy::{
@@ -117,3 +118,5 @@ fn setup_generator(mut commands: Commands, asset_server: Res<AssetServer>) {
         ));
     }
 }
+
+ */

@@ -68,7 +68,7 @@ pub fn movement(
 
     // Now get the player query
     let mut player_query = player_camera_set.p1();
-    let (mut player, mut player_transform) = player_query.single_mut();
+    let (mut player, mut player_transform) = player_query.single_mut().expect("No player found");
 
     // Handle rolling motion if player is rolling
     if player.is_rolling {

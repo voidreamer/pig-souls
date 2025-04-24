@@ -7,8 +7,8 @@ use bevy::{
 };
 use bevy::animation::AnimationTarget;
 use bevy::color::palettes::css::LIGHT_GRAY;
-use bevy::utils::HashSet;
-use crate::fx::{EffectHandles, OneShotParticleEffect};
+use bevy::platform::collections::HashSet;
+// use crate::fx::{EffectHandles, OneShotParticleEffect};
 use crate::game_states::AppState;
 
 const FOX_PATH: &str = "models/animated/Fox.glb";
@@ -21,10 +21,11 @@ impl Plugin for AnimationTestPlugin {
             .init_resource::<FoxFeetTargets>()
             .init_resource::<FoxAppState>()
             .init_resource::<Animations>()
-            .add_observer(observe_on_step)
+            // .add_observer(observe_on_step)
             .insert_resource(AmbientLight {
                 color: Color::WHITE,
                 brightness: 2000.,
+                affects_lightmapped_meshes: false,
             })
                 .add_systems(OnEnter(AppState::InGame), (setup, setup_ui))
                 .add_systems(Update, (
@@ -129,6 +130,7 @@ struct Animations {
 #[derive(Event, Reflect, Clone)]
 struct OnStep;
 
+/*
 fn observe_on_step(
     trigger: Trigger<OnStep>,
     effects: Res<EffectHandles>,
@@ -136,8 +138,6 @@ fn observe_on_step(
     transforms: Query<&GlobalTransform>,
 ) {
     let translation = transforms.get(trigger.entity()).unwrap().translation();
-
-    /*
     commands.spawn((
         Name::new("step_fire"),
         OneShotParticleEffect::new(
@@ -147,8 +147,8 @@ fn observe_on_step(
         ),
     ));
 
-     */
 }
+*/
 
 fn setup(
     mut commands: Commands,
@@ -266,7 +266,7 @@ fn setup_animation_graph_once_loaded(
 //
 // The button will automatically become a child of the parent that owns the
 // given `ChildBuilder`.
-fn add_mask_group_control(parent: &mut ChildBuilder, label: &str, width: Val, mask_group_id: u32) {
+fn add_mask_group_control(parent: &mut ChildSpawnerCommands, label: &str, width: Val, mask_group_id: u32) {
     let button_text_style = (
         TextFont {
             font_size: 14.0,

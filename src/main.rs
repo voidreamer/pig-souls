@@ -13,7 +13,7 @@ mod proc;
 use bevy::prelude::*;
 use bevy::window::{WindowResolution};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use bevy_skein::SkeinPlugin;
+// use bevy_skein::SkeinPlugin;
 
 fn main() {
     App::new()
@@ -35,16 +35,16 @@ fn main() {
                 ..default()
             })
             .set(ImagePlugin::default_nearest()))
-        .add_plugins(WorldInspectorPlugin::new())
-        .add_plugins(SkeinPlugin::default())
+        // .add_plugins(WorldInspectorPlugin::new())
+        //.add_plugins(SkeinPlugin::default())
         .add_plugins(menu::MenuPlugin)
         .add_plugins(animation::AnimationTestPlugin)
-        .add_plugins(fx::FXPlugin)
+        // .add_plugins(fx::FXPlugin)
         .add_plugins(physics::PhysicsPlugin)
         .add_plugins(player::PlayerPlugin)
         .add_plugins(camera::CameraPlugin)
         .add_plugins(world::WorldPlugin)
         .add_plugins(character_controller::CharacterControllerPlugin)
-        .add_plugins(proc::ProceduralPlugin)
+        // .add_plugins(proc::ProceduralPlugin)
         .run();
 }

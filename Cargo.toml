@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = {version = "0.15.3", features = ["dynamic_linking"]}
-avian3d = {version = "0.2.1"}
-bevy_hanabi = "*"
-bevy_skein = "*"
+bevy = {version = "0.16.0", features = ["dynamic_linking"]}
+avian3d = {git = "https://github.com/Jondolf/avian", branch="main"}
+# bevy_hanabi = "*"
+# bevy_skein = "*"
 
 rand = "0.8.5"
 bevy-inspector-egui = {version = "*"}

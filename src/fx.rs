@@ -1,3 +1,4 @@
+/*
 use bevy::prelude::*;
 use bevy_hanabi::prelude::*;
 use crate::game_states::AppState;
@@ -335,3 +336,5 @@ impl Plugin for FXPlugin {
             .add_plugins(HanabiPlugin);
     }
 }
+
+ */

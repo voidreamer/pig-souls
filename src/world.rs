@@ -1,5 +1,5 @@
 use std::f32::consts::PI;
-use avian3d::collision::{Collider, ColliderConstructor, ColliderConstructorHierarchy};
+use avian3d::prelude::{ColliderConstructor, ColliderConstructorHierarchy};
 use avian3d::prelude::{RigidBody};
 use bevy::pbr::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
@@ -21,7 +21,6 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-    /*
     // Environment (see the `collider_constructors` example for creating colliders from scenes)
     commands.spawn((
         SceneRoot(asset_server.load("character_controller_demo.glb#Scene0")),
@@ -29,7 +28,7 @@ fn setup(
         ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
         RigidBody::Static,
     ));
-     */
+
 
     // Environment (see the `collider_constructors` example for creating colliders from scenes)
     commands.spawn((

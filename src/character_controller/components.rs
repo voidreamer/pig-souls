@@ -1,6 +1,5 @@
-use avian3d::collision::Collider;
 use avian3d::math::{Quaternion, Scalar, Vector};
-use avian3d::prelude::{LockedAxes, RigidBody, ShapeCaster};
+use avian3d::prelude::{Collider, LockedAxes, RigidBody, ShapeCaster};
 use bevy::math::Dir3;
 use bevy::prelude::Component;
 
