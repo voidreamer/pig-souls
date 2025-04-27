@@ -10,7 +10,7 @@ avian3d = {git = "https://github.com/Jondolf/avian", branch="main"}
 # bevy_skein = "*"
 
 rand = "0.8.5"
-bevy-inspector-egui = {version = "*"}
+bevy-inspector-egui = {version = "0.31"}
 bevy_ghx_proc_gen = { git = "https://github.com/Henauxg/ghx_proc_gen", branch= "main" }
 
 # Optimizations in debug mode

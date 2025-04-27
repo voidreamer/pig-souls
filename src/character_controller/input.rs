@@ -11,7 +11,7 @@ pub fn keyboard_input(
     mouse_input: Res<ButtonInput<MouseButton>>,
     player_query: Query<&Player>,
 ) {
-    let Ok(player) = player_query.get_single() else { return };
+    let Ok(player) = player_query.single() else { return };
 
     // Basic movement
     let up = keyboard_input.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]);
@@ -29,12 +29,12 @@ pub fn keyboard_input(
 
     // Send movement event if there's input and not rolling
     if direction != Vector2::ZERO && !player.is_rolling {
-        movement_event_writer.send(MovementAction::Move(direction, sprinting));
+        movement_event_writer.write(MovementAction::Move(direction, sprinting));
     }
 
     // Handle jump
     if keyboard_input.just_pressed(KeyCode::Space) && !player.is_rolling {
-        movement_event_writer.send(MovementAction::Jump);
+        movement_event_writer.write(MovementAction::Jump);
     }
 
     // Handle roll
@@ -46,15 +46,15 @@ pub fn keyboard_input(
             Vector2::new(0.0, 1.0) // Default to forward
         };
 
-        movement_event_writer.send(MovementAction::Roll(roll_direction));
+        movement_event_writer.write(MovementAction::Roll(roll_direction));
     }
 
     // Handle blocking (right mouse button)
     if mouse_input.just_pressed(MouseButton::Right) && !player.is_rolling {
-        movement_event_writer.send(MovementAction::StartBlock);
+        movement_event_writer.write(MovementAction::StartBlock);
     }
     if mouse_input.just_released(MouseButton::Right) && player.is_blocking {
-        movement_event_writer.send(MovementAction::EndBlock);
+        movement_event_writer.write(MovementAction::EndBlock);
     }
 }
 
@@ -64,7 +64,7 @@ pub fn gamepad_input(
     gamepads: Query<&Gamepad>,
     player_query: Query<&Player>,
 ) {
-    let Ok(player) = player_query.get_single() else { return };
+    let Ok(player) = player_query.single() else { return };
 
     for gamepad in gamepads.iter() {
         // Movement with left stick
@@ -80,13 +80,13 @@ pub fn gamepad_input(
 
             // Only send movement if not rolling
             if direction.length_squared() > 0.01 && !player.is_rolling {
-                movement_event_writer.send(MovementAction::Move(direction, sprint));
+                movement_event_writer.write(MovementAction::Move(direction, sprint));
             }
         }
 
         // Jump (A/Cross button)
         if gamepad.just_pressed(GamepadButton::South) && !player.is_rolling {
-            movement_event_writer.send(MovementAction::Jump);
+            movement_event_writer.write(MovementAction::Jump);
         }
 
         // Roll (B/Circle button)
@@ -103,15 +103,15 @@ pub fn gamepad_input(
                 Vector2::new(0.0, 1.0) // Default to forward
             };
 
-            movement_event_writer.send(MovementAction::Roll(roll_direction));
+            movement_event_writer.write(MovementAction::Roll(roll_direction));
         }
 
         // Block with R2/Right Trigger
         if gamepad.just_pressed(GamepadButton::RightTrigger) && !player.is_rolling {
-            movement_event_writer.send(MovementAction::StartBlock);
+            movement_event_writer.write(MovementAction::StartBlock);
         }
         if gamepad.just_released(GamepadButton::RightTrigger) && player.is_blocking {
-            movement_event_writer.send(MovementAction::EndBlock);
+            movement_event_writer.write(MovementAction::EndBlock);
         }
     }
 }

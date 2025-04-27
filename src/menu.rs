@@ -102,6 +102,6 @@ fn menu(
 }
 
 fn cleanup_menu(mut commands: Commands, menu_data: Res<MenuData>, camera_data: Res<MenuCamera>) {
-    commands.entity(menu_data.button_entity).despawn_recursive();
-    commands.entity(camera_data.camera_entity).despawn_recursive();
+    commands.entity(menu_data.button_entity).despawn();
+    commands.entity(camera_data.camera_entity).despawn();
 }

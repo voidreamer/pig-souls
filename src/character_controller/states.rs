@@ -1,6 +1,6 @@
 use avian3d::math::Vector2;
 use bevy::math::{EulerRot, Quat, Vec3};
-use bevy::prelude::{Commands, Entity, EventReader, ParamSet, Query, Res, Time, Transform, With, Without};
+use bevy::prelude::{EventReader, Query, Res, Time, Transform, With, Without};
 use crate::camera::ThirdPersonCamera;
 use crate::character_controller::MovementAction;
 use crate::player::Player;
@@ -12,7 +12,7 @@ pub fn update_player_states(
     camera_query: Query<&Transform, (With<ThirdPersonCamera>, Without<Player>)>,
 ) {
     let (Ok((mut player, _player_transform)), Ok(camera_transform)) =
-        (player_query.get_single_mut(), camera_query.get_single()) else {
+        (player_query.single_mut(), camera_query.single()) else {
         return;
     };
 

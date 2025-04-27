@@ -1,3 +1,4 @@
+use std::f32::consts::PI;
 use avian3d::{prelude::*};
 use bevy::prelude::*;
 use crate::game_states::AppState;
@@ -17,7 +18,6 @@ const CHARACTER_PATH: &str = "models/animated/Fox.glb";
 #[derive(Component)]
 pub struct Player {
     pub is_moving: bool,
-    pub is_attacking: bool,
 
     pub movement_direction: Vec3,
 
@@ -35,25 +35,19 @@ pub struct Player {
     pub roll_timer: f32,
     pub roll_cooldown_timer: f32,
     pub roll_direction: Vec3,
-    pub roll_distance: f32,
     pub can_roll: bool,
 
     // Jump improvements
-    pub jump_height: f32,
     pub fall_multiplier: f32, // Increases gravity during falling
-    pub low_jump_multiplier: f32, // For shorter jumps when button released quickly
     pub coyote_time: f32, // Time player can jump after leaving a platform
     pub coyote_timer: f32,
 
     // Block mechanics
     pub is_blocking: bool,
-    pub block_effectiveness: f32, // Damage reduction percentage (0.0-1.0)
     pub can_move_while_blocking: bool,
     pub block_movement_penalty: f32, // Speed reduction while blocking
 
     // Added for UI
-    pub health: f32,
-    pub max_health: f32,
     pub stamina: f32,
     pub max_stamina: f32,
     pub stamina_regen_rate: f32,
@@ -70,8 +64,6 @@ impl Default for Player {
     fn default() -> Self {
         Self {
             is_moving: false,
-            is_attacking: false,
-
             movement_direction: Vec3::new(0.0, 0.0, 0.0),
 
             // Default movement speeds
@@ -88,25 +80,19 @@ impl Default for Player {
             roll_timer: 0.0,         // Current active roll time
             roll_cooldown_timer: 0.0, // Current cooldown timer
             roll_direction: Vec3::ZERO,
-            roll_distance: 1.0,      // Distance of the roll
             can_roll: true,          // Can player roll right now
 
             // Jump improvements
-            jump_height: 7.0,        // Base jump height
             fall_multiplier: 2.5,    // Makes falling faster than rising
-            low_jump_multiplier: 2.0, // For quick taps of jump
             coyote_time: 0.1,        // Short grace period for jumps
             coyote_timer: 0.0,       // Current coyote time
 
             // Block settings
             is_blocking: false,
-            block_effectiveness: 0.7,  // Block 70% of incoming damage
             can_move_while_blocking: true,
             block_movement_penalty: 0.5, // Move at 50% speed while blocking
 
             // Stats
-            health: 100.0,
-            max_health: 100.0,
             stamina: 100.0,
             max_stamina: 100.0,
             stamina_regen_rate: 30.0,
@@ -127,17 +113,13 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-    let body_collider = Collider::round_cuboid(
-        0.2,
-        0.1,
-        1.0,
-        0.2
-    );
+    let body_collider = Collider::capsule(0.5, 1.0);
 
     commands.spawn((
         SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(CHARACTER_PATH))),
         MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
-        Transform::from_xyz(0.0, 1.5, 0.0),
+        //Transform::from_xyz(0.0, 1.5, 0.0),
+        Transform::from_xyz(20.0, 1.0, 20.0).with_scale(Vec3::new(0.3, 0.3, 0.3)).with_rotation(Quat::from_rotation_y(-PI * 0.25)),
         Player::default(),
         CharacterController::new(body_collider), // This should add GroundNormal via required components
         Friction::ZERO.with_combine_rule(CoefficientCombine::Min),

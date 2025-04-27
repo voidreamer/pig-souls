@@ -3,9 +3,8 @@ mod input;
 mod states;
 mod physics;
 
-use avian3d::{math::*, prelude::*};
+use avian3d::math::*;
 use bevy::prelude::*;
-use crate::player::Player;
 use crate::game_states::AppState;
 pub use components::*;
 

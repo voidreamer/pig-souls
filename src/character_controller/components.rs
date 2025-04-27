@@ -31,7 +31,7 @@ pub struct MaxSlopeAngle(pub(crate) Scalar);
 
 /// The acceleration used for character movement.
 #[derive(Component, Default)]
-pub struct MovementAcceleration(pub Scalar);
+pub struct MovementAcceleration();
 
 /// The damping factor used for slowing down movement.
 #[derive(Component, Default)]
@@ -90,7 +90,7 @@ impl CharacterController {
                 .with_max_distance(0.3)  // Increased distance for better slope detection
                 .with_max_hits(5),        // More hits to find the best contact point
             LockedAxes::ROTATION_LOCKED,
-            MovementAcceleration(30.0),
+            MovementAcceleration(),
             MovementDampingFactor(0.9),
             JumpImpulse(7.0),
             MaxSlopeAngle((30.0 as Scalar).to_radians()),
@@ -98,46 +98,4 @@ impl CharacterController {
         )
     }
 
-    pub fn with_movement(
-        collider: Collider,
-        acceleration: Scalar,
-        damping: Scalar,
-        jump_impulse: Scalar,
-        max_slope_angle: Scalar,
-    ) -> (
-        Self,
-        RigidBody,
-        Collider,
-        ShapeCaster,
-        LockedAxes,
-        MovementAcceleration,
-        MovementDampingFactor,
-        JumpImpulse,
-        MaxSlopeAngle,
-        GroundNormal,
-    ) {
-        // Create shape caster as a slightly smaller version of collider
-        let mut caster_shape = collider.clone();
-        caster_shape.set_scale(Vector::ONE * 0.95, 10);
-
-        (
-            CharacterController,
-            RigidBody::Dynamic,
-            collider,
-            ShapeCaster::new(
-                caster_shape,
-                Vector::ZERO,
-                Quaternion::default(),
-                Dir3::NEG_Y,
-            )
-                .with_max_distance(0.3)
-                .with_max_hits(5),
-            LockedAxes::ROTATION_LOCKED,
-            MovementAcceleration(acceleration),
-            MovementDampingFactor(damping),
-            JumpImpulse(jump_impulse),
-            MaxSlopeAngle(max_slope_angle),
-            GroundNormal::new(),
-        )
-    }
 }

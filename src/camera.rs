@@ -5,11 +5,11 @@ use bevy::{
     },
     pbr::{ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel, VolumetricFog},
     prelude::*,
-    window::PrimaryWindow,
     math::StableInterpolate
 };
 use avian3d::prelude::*;
-use bevy::pbr::Atmosphere;
+use bevy::pbr::{Atmosphere, AtmosphereSettings};
+use bevy::render::camera::Exposure;
 use crate::game_states::AppState;
 use crate::player::Player;
 
@@ -55,31 +55,28 @@ pub fn spawn_camera(
             hdr: true,
             ..default()
         },
-        DistanceFog{
-            color: Color::srgb_u8(43, 44, 100),
-            falloff: FogFalloff::Exponential{
-                density: 15e-3,
-            },
-            ..default()
-        },
-        Bloom {
-            intensity: 0.03,
-            ..default()
-        },
+
+        Bloom::NATURAL,
         Tonemapping::TonyMcMapface,
         // Msaa is off to let ssao work.
         Msaa::Off,
         ScreenSpaceAmbientOcclusion::default(),
         TemporalAntiAliasing::default(),
 
-        // Add depth prepass for post-processing
         MotionBlur{
             samples: 8,
             shutter_angle: 1.5,
             ..default()
         },
         VolumetricFog {
-            ambient_intensity: 0.5,
+            ambient_intensity: 0.1,
+            ..default()
+        },
+        DistanceFog{
+            color: Color::srgb_u8(43, 44, 100),
+            falloff: FogFalloff::Exponential{
+                density: 15e-3,
+            },
             ..default()
         },
 
@@ -93,7 +90,10 @@ pub fn spawn_camera(
         // Add third-person camera controller
         ThirdPersonCamera::default(),
         Atmosphere::EARTH,
-
+        AtmosphereSettings{
+            ..Default::default()
+        },
+        Exposure::SUNLIGHT
 
     ))
         /*
@@ -112,7 +112,6 @@ pub fn spawn_camera(
 
 // Third-person camera controller
 pub fn third_person_camera(
-    primary_window: Query<&Window, With<PrimaryWindow>>,
     mut mouse_motion: EventReader<MouseMotion>,
     mut mouse_wheel: EventReader<MouseWheel>,
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -124,12 +123,12 @@ pub fn third_person_camera(
 ) {
     // Handle ESC key to exit the game
     if keyboard.just_pressed(KeyCode::Escape) {
-        exit.send(AppExit::default());
+        exit.write(AppExit::default());
     }
 
     // Only update if we have a player and a camera
     if let (Ok(player_transform), Ok((mut camera_transform, mut camera_params))) =
-        (player_query.get_single(), camera_query.get_single_mut()) {
+        (player_query.single(), camera_query.single_mut()) {
 
         // Handle mouse input for camera rotation
         // Update camera rotation based on mouse movement
@@ -229,8 +228,8 @@ pub fn camera_collision_detection(
     time: Res<Time>,
 ) {
     // Get player and camera data
-    let Ok((player_entity, player_transform)) = player_query.get_single() else { return };
-    let Ok((mut camera_transform, camera_params)) = camera_query.get_single_mut() else { return };
+    let Ok((player_entity, player_transform)) = player_query.single() else { return };
+    let Ok((mut camera_transform, camera_params)) = camera_query.single_mut() else { return };
 
     // Player position
     let player_position = player_transform.translation;

@@ -1,9 +1,8 @@
-use std::f32::consts::PI;
 use avian3d::math::{AdjustPrecision, Vector};
 use avian3d::position::Rotation;
 use avian3d::prelude::{GravityScale, LinearVelocity, ShapeHits};
 use bevy::color::Color;
-use bevy::math::{EulerRot, Mat3, Quat, Vec3};
+use bevy::math::{EulerRot, Quat, Vec3};
 use bevy::prelude::{Commands, Entity, EventReader, Gizmos, ParamSet, Query, Res, Time, Transform, With};
 use crate::camera::ThirdPersonCamera;
 use crate::character_controller::components::*;
@@ -16,7 +15,7 @@ pub fn enhanced_gravity(
     mut linear_velocity_query: Query<&mut LinearVelocity, With<Player>>,
 ) {
     if let (Ok((player, mut gravity_scale)), Ok(linear_velocity)) =
-        (player_query.get_single_mut(), linear_velocity_query.get_single_mut()) {
+        (player_query.single_mut(), linear_velocity_query.single_mut()) {
 
         // If we're falling, increase gravity
         if linear_velocity.y < 0.0 {
@@ -56,7 +55,7 @@ pub fn movement(
     // Get camera transform first
     let camera_transform = {
         let camera_query = player_camera_set.p0();
-        if let Ok(transform) = camera_query.get_single() {
+        if let Ok(transform) = camera_query.single() {
             *transform
         } else {
             return;
@@ -381,7 +380,6 @@ pub fn debug_visualize_ground_normals(
 
         // Calculate slope angle from vertical
         let slope_angle = normal.angle_between(Vector::Y).abs();
-        let angle_degrees = slope_angle * 180.0 / PI;
 
         // Determine color based on grounded state and slope steepness
         let color = if grounded.is_some() {
@@ -408,18 +406,5 @@ pub fn debug_visualize_ground_normals(
 
         // Draw a small sphere at the origin point for clarity
         gizmos.sphere(origin, 0.1, color);
-
-        // Position text above the player
-        let text_pos = origin + Vec3::new(0.0, 1.0, 0.0);
-
-        // Draw the slope angle as text
-        let status = if grounded.is_some() {
-            "Grounded"
-        } else if slope_angle <= 1.2 * max_allowed_angle {
-            "Visual Tilt"
-        } else {
-            "Too Steep"
-        };
-
     }
 }

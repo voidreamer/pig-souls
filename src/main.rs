@@ -12,6 +12,7 @@ mod proc;
 
 use bevy::prelude::*;
 use bevy::window::{WindowResolution};
+use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 // use bevy_skein::SkeinPlugin;
 
@@ -35,7 +36,8 @@ fn main() {
                 ..default()
             })
             .set(ImagePlugin::default_nearest()))
-        // .add_plugins(WorldInspectorPlugin::new())
+        .add_plugins(EguiPlugin { enable_multipass_for_primary_context: true })
+        .add_plugins(WorldInspectorPlugin::new())
         //.add_plugins(SkeinPlugin::default())
         .add_plugins(menu::MenuPlugin)
         .add_plugins(animation::AnimationTestPlugin)

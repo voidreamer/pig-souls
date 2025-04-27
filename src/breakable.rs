@@ -19,13 +19,11 @@ impl Plugin for BreakablePropsPlugin {
             .register_type::<FracturePattern>()
             .add_event::<BreakPropEvent>()
             .add_systems(OnEnter(AppState::InGame), setup)
-            /*
             .add_systems(FixedUpdate, (
                 detect_breakable_collisions,
                 break_props.after(detect_breakable_collisions),
                 despawn_broken_pieces,
             ).run_if(in_state(AppState::InGame)))
-             */
             ;
     }
 }
@@ -204,27 +202,24 @@ pub struct BreakPropEvent {
     pub entity: Entity,
     pub impact_point: Vec3,
     pub impact_force: f32,
-    pub impact_velocity: Vec3,
 }
 
 /// System to detect collisions with breakable props
-/*
 fn detect_breakable_collisions(
-    mut collision_events: EventReader<CollisionStarted>,
+    collisions: Collisions,
     mut break_events: EventWriter<BreakPropEvent>,
     breakables: Query<&Breakable>,
     transforms: Query<&GlobalTransform>,
     rigid_bodies: Query<&RigidBody>,
     velocities: Query<&LinearVelocity>,
 ) {
-    for collision in collision_events.read() {
-        let contacts = &collision.0;
+    for collision in collisions.iter() {
 
         // Check if either entity is breakable
-        let (breakable_entity, other_entity) = if breakables.contains(contacts.entity1) {
-            (contacts.entity1, contacts.entity2)
-        } else if breakables.contains(contacts.entity2) {
-            (contacts.entity2, contacts.entity1)
+        let (breakable_entity, other_entity) = if breakables.contains(collision.entity1) {
+            (collision.entity1, collision.entity2)
+        } else if breakables.contains(collision.entity2) {
+            (collision.entity2, collision.entity1)
         } else {
             continue;
         };
@@ -250,16 +245,10 @@ fn detect_breakable_collisions(
         if impact_force < breakable.break_threshold {
             continue;
         }
-
-        // Get impact velocity for effect scaling
-        let impact_velocity = velocities.get(other_entity)
-            .map(|vel| vel.0)
-            .unwrap_or(Vec3::ZERO);
-
         // Get impact point from transforms
         let impact_point = if let (Ok(transform1), Ok(transform2)) = (
-            transforms.get(contacts.entity1),
-            transforms.get(contacts.entity2)
+            transforms.get(collision.entity1),
+            transforms.get(collision.entity2)
         ) {
             // Use midpoint between entities as approximate impact point
             (transform1.translation() + transform2.translation()) * 0.5
@@ -271,15 +260,13 @@ fn detect_breakable_collisions(
         };
 
         // Send break event
-        break_events.send(BreakPropEvent {
+        break_events.write(BreakPropEvent {
             entity: breakable_entity,
             impact_point,
             impact_force,
-            impact_velocity,
         });
     }
 }
- */
 
 /// System to handle breaking props with improved physics and effects
 fn break_props(
@@ -380,61 +367,6 @@ fn break_props(
     }
 }
 
-/// Helper function to spawn model-based broken pieces
-fn spawn_model_pieces(
-    commands: &mut Commands,
-    pieces: &[Handle<Scene>],
-    breakable: &Breakable,
-    global_transform: &GlobalTransform,
-    impact_point: Vec3,
-    impact_force: f32,
-    impact: &ImpactSettings,
-    rng: &mut impl Rng,
-) {
-    let original_pos = global_transform.translation();
-
-    for piece_scene in pieces {
-        // Small random offset to prevent pieces from spawning at the exact same spot
-        let offset = Vec3::new(
-            rng.gen_range(-0.1..0.1),
-            rng.gen_range(-0.05..0.1),
-            rng.gen_range(-0.1..0.1),
-        );
-
-        let piece_pos = original_pos + offset;
-
-        // Spawn the piece - we use required components for the physics properties!
-        let piece_entity = commands.spawn((
-            SceneRoot(piece_scene.clone()),
-            Transform::from_matrix(global_transform.compute_matrix())
-                .with_translation(piece_pos),
-            // Required components will handle physics setup
-            BrokenPiece {
-                timer: Timer::new(Duration::from_secs_f32(breakable.despawn_delay), TimerMode::Once),
-                original_position: original_pos,
-                max_distance: impact.max_scatter_distance,
-            },
-            // These will override the defaults from BrokenPiece's required components
-            LinearDamping(impact.piece_linear_damping),
-            AngularDamping(impact.piece_angular_damping),
-            Restitution::new(impact.piece_restitution),
-            Friction::new(impact.piece_friction),
-            // Add a simple collider
-            Collider::cuboid(0.2, 0.2, 0.2),
-            MaxLinearSpeed(5.0),
-        )).id();
-
-        apply_explosion_impulse(
-            commands,
-            piece_entity,
-            piece_pos,
-            impact_point,
-            breakable.explosion_force,
-            impact_force,
-            rng,
-        );
-    }
-}
 
 /// Helper function to spawn procedurally generated broken pieces
 fn spawn_procedural_pieces(
