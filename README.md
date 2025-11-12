@@ -1,1 +1,1 @@
-An experimental game made un bevy / rust of a pig discovering an epic world
+An experimental game made in bevy and using rust, consists of a pig discovering an epic world!
