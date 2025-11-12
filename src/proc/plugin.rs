@@ -34,7 +34,6 @@ use bevy_ghx_proc_gen::{
         ghx_grid::coordinate_system::CoordinateSystem,
     },
     debug_plugin::{
-        cursor::{CursorsOverlaysRoot, CursorsPanelRoot},
         egui_editor::{paint, toggle_editor, update_painting_state, EditorContext},
         DebugPluginConfig, GenerationControl, GenerationControlStatus, GenerationViewMode,
         ProcGenDebugPlugins,

@@ -28,7 +28,7 @@ use bevy_ghx_proc_gen::{
     },
     spawner_plugin::NodesSpawner,
 };
-
+use bevy_ghx_proc_gen::debug_plugin::{GenerationControl, GenerationControlStatus};
 use rules::rules_and_assets;
 use crate::game_states::AppState;
 

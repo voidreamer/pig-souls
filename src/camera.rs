@@ -385,7 +385,7 @@ impl Plugin for CameraPlugin {
             .add_systems(OnEnter(AppState::InGame), spawn_camera)
             .add_systems(Update, (
                 third_person_camera,
-                camera_collision_detection
+                //camera_collision_detection
             ).chain().run_if(in_state(AppState::InGame)))
             .add_plugins(TemporalAntiAliasPlugin);
     }

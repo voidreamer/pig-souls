@@ -40,7 +40,7 @@ fn main() {
         .add_plugins(menu::MenuPlugin)
         .add_plugins(animation::AnimationTestPlugin)
         .add_plugins(fx::FXPlugin)
-        .add_plugins(physics::PhysicsPlugin)
+        //.add_plugins(physics::PhysicsPlugin)
         .add_plugins(player::PlayerPlugin)
         .add_plugins(camera::CameraPlugin)
         .add_plugins(world::WorldPlugin)
